@@ -8,6 +8,7 @@ import { ChangesPanel, type ChangesGroupConfig } from '@/components/views/git/Ch
 import { BranchSelector } from '@/components/views/git/BranchSelector';
 import { CommitSection } from '@/components/views/git/CommitSection';
 import { DirtyBranchSwitchDialog } from '@/components/views/git/DirtyBranchSwitchDialog';
+import { pushCommittedChanges } from '@/components/views/git/commitAndPush';
 import { SyncActions } from '@/components/views/git/SyncActions';
 import { PierreDiffViewer } from '@/components/views/PierreDiffViewer';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -441,21 +442,13 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
         const remote = effectiveRemotes.find((entry) => entry.name === trackingRemoteName) ?? effectiveRemotes[0];
         if (!remote) throw new Error(t('mobile.changes.noRemote'));
         setSyncAction('sync');
-        const trackingPrefix = `${remote.name}/`;
-        const trackedBranch = status?.tracking?.startsWith(trackingPrefix)
-          ? status.tracking.slice(trackingPrefix.length)
-          : undefined;
-
-        await git.gitFetch(currentDirectory, { remote: remote.name });
-        const afterFetch = await git.getGitStatus(currentDirectory);
-        if ((afterFetch.behind ?? 0) > 0) {
-          await git.gitPull(currentDirectory, { remote: remote.name, branch: trackedBranch, rebase: true });
-        }
-
-        const afterPull = await git.getGitStatus(currentDirectory);
-        if ((afterPull.ahead ?? 0) > 0) {
-          await git.gitPush(currentDirectory);
-        }
+        await pushCommittedChanges({
+          git,
+          directory: currentDirectory,
+          remote,
+          status,
+          dirtyWorktreeError: t('gitView.toast.commitOrStashBeforeSync'),
+        });
 
         await refreshStatusAndBranches(false);
         await refreshRemotes();
