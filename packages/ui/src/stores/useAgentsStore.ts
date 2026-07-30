@@ -254,6 +254,10 @@ export const isAgentHidden = (agent: Agent): boolean => {
 export const filterVisibleAgents = (agents: Agent[]): Agent[] =>
   agents.filter((agent) => !isAgentHidden(agent));
 
+// Hidden custom agents remain manageable even though pickers exclude them.
+export const isAgentManageable = (agent: Agent): boolean =>
+  !isAgentHidden(agent) || !isAgentBuiltIn(agent);
+
 const CONFIG_EVENT_SOURCE = "useAgentsStore";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_HEALTH_WAIT_MS = 20000;
@@ -329,6 +333,7 @@ export interface AgentDraft {
   top_p?: number | null;
   mode?: "primary" | "subagent" | "all";
   permissions?: PermissionRule[];
+  hidden?: boolean;
 }
 
 interface AgentsStore {
