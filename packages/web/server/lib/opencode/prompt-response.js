@@ -1,9 +1,7 @@
 const formatError = (error) => {
   if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  if (error && typeof error.message === 'string') return error.message;
   try {
-    return JSON.stringify(error);
+    return JSON.stringify(error) ?? String(error);
   } catch {
     return String(error);
   }
