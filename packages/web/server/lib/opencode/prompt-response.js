@@ -1,5 +1,7 @@
 const formatError = (error) => {
   if (error instanceof Error) return error.message;
+  if (Object.prototype.toString.call(error) === '[object String]') return String(error);
+  if (error && Object.prototype.toString.call(error.message) === '[object String]') return String(error.message);
   try {
     return JSON.stringify(error) ?? String(error);
   } catch {

@@ -1229,7 +1229,10 @@ const registerPackagedUiProtocol = () => {
       // A shared protocol handler cannot infer which window/runtime owns a
       // relative request, so fail closed instead of serving the app shell or
       // forwarding credentials to the wrong host.
-      return Response.json({ error: { code: 'runtime_unavailable' } }, { status: 503 });
+      return Response.json(
+        { error: { code: 'runtime_unavailable' } },
+        { status: 503, headers: { 'x-openchamber-error': 'runtime-unavailable' } },
+      );
     }
 
     const distPath = resolveWebDistDir();

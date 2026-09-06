@@ -83,6 +83,9 @@ const NON_API_RESPONSE = "the runtime returned a web page instead of an API resp
 const isWebPageResponse = (response?: { headers?: Headers }): boolean =>
   (response?.headers?.get("content-type") ?? "").toLowerCase().includes("text/html");
 
+const isRuntimeUnavailableResponse = (response: Response): boolean =>
+  response.headers.get("x-openchamber-error") === "runtime-unavailable";
+
 function unwrapSdkOptional<T>(result: SdkResult<T>, operation: string): T | undefined {
   if (!result.error && !isWebPageResponse(result.response)) return result.data;
   const status = result.response?.status;
@@ -1039,7 +1042,9 @@ class OpencodeService {
     const suffix = detail && detail.trim().length > 0 ? `: ${detail.trim()}` : '';
     const error = new Error(`Failed to send message (${response.status})${suffix}`) as Error & { status?: number };
     error.status = response.status;
-    recordProviderError(params.providerID, response.status);
+    if (!isRuntimeUnavailableResponse(response)) {
+      recordProviderError(params.providerID, response.status);
+    }
     throw error;
   }
 

@@ -281,6 +281,28 @@ describe('opencodeClient prompt retry behavior', () => {
     expect(error instanceof Error ? error.message : String(error)).toContain('Failed to send message (503)');
   });
 
+  test('does not open the provider circuit for packaged runtime routing failures', async () => {
+    const runtimeUnavailable = () => ({
+      response: new Response(JSON.stringify({ error: { code: 'runtime_unavailable' } }), {
+        status: 503,
+        headers: {
+          'content-type': 'application/json',
+          'x-openchamber-error': 'runtime-unavailable',
+        },
+      }),
+    });
+    promptAsyncResults.push(runtimeUnavailable(), runtimeUnavailable(), runtimeUnavailable());
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(sendPrompt('runtime-routing')).rejects.toThrow('runtime_unavailable');
+    }
+
+    promptAsyncResults.push({ response: new Response(null, { status: 204 }) });
+    const messageId = await sendPrompt('runtime-routing');
+    expect(messageId.startsWith('msg_')).toBe(true);
+    expect(promptAsyncCalls).toHaveLength(4);
+  });
+
   test('does not dispatch after the runtime changes while preparing attachments', async () => {
     runtimeKey = 'runtime-a';
     const pending = opencodeClient.sendMessage({
