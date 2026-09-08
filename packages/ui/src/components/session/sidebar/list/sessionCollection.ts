@@ -68,7 +68,11 @@ const isKnownActiveSessionDirectory = (
   if (!isVSCode) return true;
   if (session.time?.archived) return true;
   const directory = normalizePath(resolveGlobalSessionDirectory(session))?.toLowerCase();
-  if (!directory) return false;
+  // A child may inherit its directory from an archived parent, which joins
+  // this active collection only later during ownership indexing. Keep that
+  // child long enough for the lineage-aware owner to decide; directory-less
+  // roots remain excluded from VS Code.
+  if (!directory) return Boolean(parentIdOf(session));
   if (knownDirectories.size === 0) return false;
   return knownDirectories.has(directory);
 };

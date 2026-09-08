@@ -40,7 +40,7 @@ import { getSyncSessionMaterializationStatus } from '@/sync/sync-refs';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from '../folders/sessionFolderDnd';
 import { useSessionRowOrderRegistry } from './sessionRowOrder';
-import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, resolveSessionPrLookupKey, resolveTooltipBranchLabel, selectBlockingBadgeSessionScopes, selectRowBadgeVisibilityClass, type BlockingBadgeSessionScope } from './sessionNodeItemUtils';
+import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, isSessionArchived, nodeContainsSessionId, nodeHasPinnedMembershipChange, resolveSessionPrLookupKey, resolveTooltipBranchLabel, selectBlockingBadgeSessionScopes, selectRowBadgeVisibilityClass, type BlockingBadgeSessionScope } from './sessionNodeItemUtils';
 import { useSessionRowMenuState } from './useSessionRowMenuState';
 import type { SessionNode } from '../types';
 import type { SessionSidebarRenderContext } from '../sessionSidebarRowModel';
@@ -119,7 +119,7 @@ export type SessionNodeItemProps = {
   openSidebarMenuKey: string | null;
   setOpenSidebarMenuKey: (key: string | null) => void;
   createFolderAndStartRename: (scopeKey: string, parentId?: string | null) => { id: string } | null;
-  handleDeleteSession: (session: Session, source?: { archivedBucket?: boolean; hardDelete?: boolean; skipConfirm?: boolean }) => void;
+  handleDeleteSession: (session: Session, source?: { hardDelete?: boolean; skipConfirm?: boolean }) => void;
   handleRestoreSession: (session: Session) => void;
   startSessionWorktreeMenuLoad: (args: {
     projectId: string | null;
@@ -357,14 +357,15 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
     ? 'group-hover:opacity-0'
     : 'group-hover:opacity-0 group-has-[:focus-visible]:opacity-0';
   const showOpenInEditorAction = isVSCode;
-  const showQuickArchiveAction = !archivedBucket && !mobileVariant;
+  const archivedSession = isSessionArchived(node.session);
+  const showQuickArchiveAction = !archivedSession && !mobileVariant;
   const sessionWorkEnabled = useUIStore((state) => state.sessionWorkEnabled);
   const sessionRecapEnabled = useUIStore((state) => state.sessionRecapEnabled);
   // Track / Done belongs to top-level project sessions: Chats are plain
   // conversations, never work. Touch layouts keep their actions permanently
   // visible, where an icon on every row would be noise: there it lives in the
   // session menu only.
-  const canTrackWork = sessionWorkEnabled && !archivedBucket && !node.session.parentID && !isChatDirectoryPath(node.session.directory);
+  const canTrackWork = sessionWorkEnabled && !archivedSession && !node.session.parentID && !isChatDirectoryPath(node.session.directory);
   const showWorkAction = canTrackWork && !alwaysShowActions;
   // Hover-revealed actions besides the menu: work, quick archive, and in VS
   // Code open-in-editor.
@@ -1045,14 +1046,14 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
     event.preventDefault();
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
-    handleDeleteSession(session, { archivedBucket });
+    handleDeleteSession(session);
   };
 
   const handleQuickDeleteClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
-    handleDeleteSession(session, { archivedBucket, hardDelete: true, skipConfirm: true });
+    handleDeleteSession(session, { hardDelete: true, skipConfirm: true });
   };
 
   const handleOpenInEditorPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -1247,7 +1248,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
           {t('sessions.sidebar.project.actions.edit')}
         </Item>
       ) : null}
-      {canShowSessionWorktreeMenu({ isSubtaskSession, archivedBucket: Boolean(archivedBucket), isVSCode, sessionDirectory }) ? (() => {
+      {canShowSessionWorktreeMenu({ isSubtaskSession, archivedBucket: archivedSession, isVSCode, sessionDirectory }) ? (() => {
         const isWorktreeMenuDisabled = getSessionWorktreeMenuDisabled({
           sessionDirectory,
           isStreaming,
@@ -1360,7 +1361,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
         </SessionMenuItemHint>
       ) : null}
 
-      {sessionDirectory && !archivedBucket && !isTimelineRow ? (() => {
+      {sessionDirectory && !archivedSession && !isTimelineRow ? (() => {
         // Folders are flat per project: list folders from every scope of the
         // owning project (root + all worktrees) so sessions can be filed
         // across worktrees. Each action targets the folder's owning scope,
@@ -1477,15 +1478,15 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
       ) : null}
 
       <Separator />
-      {!archivedBucket ? (
+      {!archivedSession ? (
         <SessionMenuItemHint hint={t('sessions.sidebar.session.menuHint.archive')}>
-        <Item className="[&>svg]:mr-1" onClick={() => handleDeleteSession(session, { archivedBucket })}>
+        <Item className="[&>svg]:mr-1" onClick={() => handleDeleteSession(session)}>
           <Icon name="inbox-archive" className="mr-1 h-4 w-4" />
           {t('sessions.sidebar.bulkActions.archive')}
         </Item>
         </SessionMenuItemHint>
       ) : null}
-      {archivedBucket ? (
+      {archivedSession ? (
         <SessionMenuItemHint hint={t('sessions.sidebar.session.menuHint.restore')}>
         <Item className="[&>svg]:mr-1" onClick={() => handleRestoreSession(session)}>
           <Icon name="inbox-unarchive" className="mr-1 h-4 w-4" />
@@ -1494,7 +1495,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
         </SessionMenuItemHint>
       ) : null}
       <SessionMenuItemHint hint={t('sessions.sidebar.session.menuHint.delete')}>
-      <Item className="text-destructive focus:text-destructive [&>svg]:mr-1" onClick={() => handleDeleteSession(session, { archivedBucket, hardDelete: true })}>
+      <Item className="text-destructive focus:text-destructive [&>svg]:mr-1" onClick={() => handleDeleteSession(session, { hardDelete: true })}>
         <Icon name="delete-bin" className="mr-1 h-4 w-4" />
         {t('sessions.sidebar.bulkActions.delete')}
       </Item>
@@ -1693,7 +1694,6 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
               <div
                 data-session-row={session.id}
                 data-session-scope={selectionScopeKey ?? ''}
-                data-session-archived={archivedBucket ? '1' : '0'}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={handleRowBackgroundClick}
                 // Row geometry mirrors the zone-header band: full container
@@ -1750,7 +1750,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                           would reflow the truncated title and cause a micro
                           horizontal shift when the status flips. */}
                       <div className={cn('block min-w-0 flex-1 truncate typography-ui-label font-normal', actionsMaskClass, isActive || isRowSelected ? 'text-interactive-selection-foreground' : needsAttention ? 'text-foreground' : 'text-foreground/80')}>{renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}</div>
-                      {!archivedBucket && sessionDirectory && renderContext === 'recent' ? (
+                      {!archivedSession && sessionDirectory && renderContext === 'recent' ? (
                         <DirectoryActionIndicator
                           directory={sessionDirectory}
                           className={alwaysShowActions ? undefined : cn('transition-opacity', coveredMetaFadeClass)}

@@ -145,6 +145,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
   const collapsedFolderIds = useSessionFoldersStore((state) => state.collapsedFolderIds);
   const createFolder = useSessionFoldersStore((state) => state.createFolder);
   const addSessionToFolder = useSessionFoldersStore((state) => state.addSessionToFolder);
+  const removeSessionsFromFolders = useSessionFoldersStore((state) => state.removeSessionsFromFolders);
   const projectView = view.projectView;
   const { getOrderedGroups, setGroupOrderByProject, toggleGroup, toggleProject } = projectViewActions;
   const collection = useSessionProjectCollection({ knownDirectories: topology.knownDirectories, isVSCode: topology.isVSCode, isVisible: true });
@@ -294,7 +295,6 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     foldersMap,
     standaloneGroups,
   });
-
   const onSearchMatchCountChange = view.onSearchMatchCountChange;
   // Unmounting means nothing is listed any more, so the header must not keep
   // showing the last count it was told about.
@@ -322,6 +322,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     foldersMap,
     createFolder,
     addSessionToFolder,
+    removeSessionsFromFolders,
   });
   const { github, linear } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);

@@ -13,10 +13,11 @@ import {
 import { getSessionLifecycleOrderValue } from '@/sync/session-ordering';
 import { formatDirectoryName, formatPathForDisplay } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { getWorktreeFirstSeenAt } from './worktreeFirstSeen';
 import { buildProjectWorktreeIndex } from '../worktreeIndex';
 import type { SpaceMark } from '@/lib/spaces/spaces-store';
+import { isSessionTreeRoot } from '../sessions/sessionNodeItemUtils';
+import { createSessionDirectoryResolver } from '../sessions/sessionOwnership';
 
 type Args = {
   homeDirectory: string | null;
@@ -37,7 +38,36 @@ type Args = {
   runKeyBySessionId?: ReadonlyMap<string, string>;
 };
 
+type SessionParentIndex = {
+  roots: Session[];
+  childrenByParent: Map<string, Session[]>;
+  sessionsById: Map<string, Session>;
+};
+
 const isArchivedSession = (session: Session): boolean => Boolean(session.time?.archived);
+
+export const indexSessionsByParent = (
+  sessions: Session[],
+): SessionParentIndex => {
+  const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+  const roots: Session[] = [];
+  const childrenByParent = new Map<string, Session[]>();
+  sessions.forEach((session) => {
+    if (isSessionTreeRoot(session, sessionMap)) {
+      roots.push(session);
+      return;
+    }
+    const parentID = session.parentID;
+    if (!parentID) return;
+    const collection = childrenByParent.get(parentID) ?? [];
+    collection.push(session);
+    childrenByParent.set(parentID, collection);
+  });
+  return { roots, childrenByParent, sessionsById: sessionMap };
+};
+
+export const subtreeHasLiveSession = (node: SessionNode): boolean =>
+  !node.session.time?.archived || node.children.some(subtreeHasLiveSession);
 
 export const useSessionGrouping = (args: Args) => {
   const { t } = useI18n();
@@ -52,7 +82,7 @@ export const useSessionGrouping = (args: Args) => {
   }, []);
 
   const buildSessionSearchText = React.useCallback((session: Session): string => {
-    const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null) ?? '';
+    const sessionDirectory = normalizePath(session.directory ?? null) ?? '';
     const sessionTitle = (session.title || t('sessions.sidebar.session.untitled')).trim();
     return `${sessionTitle} ${sessionDirectory}`.toLowerCase();
   }, [t]);
@@ -98,19 +128,12 @@ export const useSessionGrouping = (args: Args) => {
       // ownership buckets are built. Dedupe retains that root/sibling order.
       const sortedProjectSessions = dedupeSessionsById(projectSessions);
 
-      const sessionMap = new Map(sortedProjectSessions.map((session) => [session.id, session]));
-      const childrenMap = new Map<string, Session[]>();
-      sortedProjectSessions.forEach((session) => {
-        const parentID = (session as Session & { parentID?: string | null }).parentID;
-        if (!parentID) return;
-        const parentSession = sessionMap.get(parentID);
-        if (!parentSession || isArchivedSession(parentSession) !== isArchivedSession(session)) {
-          return;
-        }
-        const collection = childrenMap.get(parentID) ?? [];
-        collection.push(session);
-        childrenMap.set(parentID, collection);
-      });
+      const {
+        roots: rootCandidates,
+        childrenByParent: childrenMap,
+        sessionsById: sessionMap,
+      } = indexSessionsByParent(sortedProjectSessions);
+      const resolveSessionDirectory = createSessionDirectoryResolver(sessionMap, args.worktreeMetadata);
 
       const worktreeByPath = buildProjectWorktreeIndex(availableWorktrees, normalizedProjectRoot);
       // A space's group is keyed by the project's path inside the space, as its sessions are owned.
@@ -122,9 +145,9 @@ export const useSessionGrouping = (args: Args) => {
       }
 
       const getSessionWorktree = (session: Session): WorktreeMetadata | null => {
-        const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
         const sessionWorktreeMeta = args.worktreeMetadata.get(session.id) ?? null;
         if (sessionWorktreeMeta) return sessionWorktreeMeta;
+        const sessionDirectory = resolveSessionDirectory(session);
         if (sessionDirectory) {
           const worktree = worktreeByPath.get(sessionDirectory) ?? null;
           if (worktree && sessionDirectory !== normalizedProjectRoot) {
@@ -146,14 +169,6 @@ export const useSessionGrouping = (args: Args) => {
         return { session, children: childNodes, worktree: getSessionWorktree(session) };
       };
 
-      const rootCandidates = sortedProjectSessions.filter((session) => {
-        const parentID = (session as Session & { parentID?: string | null }).parentID;
-        if (!parentID) return true;
-        const parentSession = sessionMap.get(parentID);
-        if (!parentSession) return true;
-        return isArchivedSession(parentSession) !== isArchivedSession(session);
-      });
-
       // A malformed cycle has no structural root. Start with normal roots,
       // then expose each still-unclaimed component from its first input row.
       const roots: SessionNode[] = [];
@@ -163,12 +178,10 @@ export const useSessionGrouping = (args: Args) => {
       };
       rootCandidates.forEach(addRoot);
       sortedProjectSessions.forEach(addRoot);
-
       const groupedNodes = new Map<string, SessionNode[]>();
       const archivedKey = '__archived__';
 
       const getGroupKey = (session: Session) => {
-        if (session.time?.archived) return archivedKey;
         // VS Code groups by open workspace, not by worktree: every non-archived
         // session in a project belongs to that project's single (root) group.
         // Worktrees aren't registered in VS Code, so the desktop directory-match
@@ -180,8 +193,7 @@ export const useSessionGrouping = (args: Args) => {
           if (resolvedScope === normalizedProjectRoot) return normalizedProjectRoot ?? '__project_root__';
           if (worktreeByPath.has(resolvedScope) || spaceByDirectory.has(resolvedScope)) return resolvedScope;
         }
-        const metadataPath = normalizePath(args.worktreeMetadata.get(session.id)?.path ?? null);
-        const normalizedDir = metadataPath ?? resolveGlobalSessionDirectory(session);
+        const normalizedDir = resolveSessionDirectory(session);
         // Active sessions have already passed project ownership. An unavailable
         // worktree directory is still owned by this configured project, not an
         // archive; only archived records use the archive bucket.
@@ -192,7 +204,7 @@ export const useSessionGrouping = (args: Args) => {
       };
 
       roots.forEach((node) => {
-        const groupKey = getGroupKey(node.session);
+        const groupKey = subtreeHasLiveSession(node) ? getGroupKey(node.session) : archivedKey;
         if (!groupedNodes.has(groupKey)) groupedNodes.set(groupKey, []);
         groupedNodes.get(groupKey)?.push(node);
       });

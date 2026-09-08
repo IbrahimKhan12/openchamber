@@ -298,6 +298,21 @@ ID search does not include archived sessions. `ArchiveView` applies the same
 exact-ID rule to its own archived list. Other queries keep each view's existing
 matching and ordering. Search does not fetch sessions or broaden list membership.
 
+Subagents stay nested under a present parent across archive-state changes unless
+the child was archived independently of an active parent. A tree enters the
+archived bucket only when every session in it is archived. An archived root
+with a live descendant stays in its owning project or worktree group so the live
+session remains visible. Directory-less children inherit ownership from their
+parent before VS Code applies its exact-workspace filter.
+
+Archived auto-folders assign only tree roots. After authoritative loading they
+remove stale descendant and non-archived memberships, so a subagent does not
+render both beside and beneath its parent.
+
+Single-row and bulk archive/delete confirmation scopes include the full visible
+subtree. Row action type and bulk archived-state detection come from each
+session's own `time.archived`, not the group that renders it.
+
 ## Loading rules
 
 - Publish bootstrap demand only for the current directory and the selected session's directory. Known project roots and worktrees are topology, not demand: rows and sessions come from the global session list, activity from the global status index and the host status seed. Every directory-scoped read makes OpenCode create and initialize a location, so demanding the whole topology created one per project at startup.

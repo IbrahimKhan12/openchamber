@@ -66,6 +66,35 @@ const getOpenCodeProjectId = (session: SessionOwnershipRecord): string | null =>
   return session.projectID || session.project?.id || null;
 };
 
+export const createSessionDirectoryResolver = (
+  sessionsById: ReadonlyMap<string, SessionOwnershipRecord>,
+  worktreeMetadata: ReadonlyMap<string, { path?: string | null }> = new Map(),
+): ((session: SessionOwnershipRecord) => string | null) => {
+  const resolvedBySessionId = new Map<string, string | null>();
+
+  return (session) => {
+    if (resolvedBySessionId.has(session.id)) return resolvedBySessionId.get(session.id) ?? null;
+
+    const lineage: string[] = [];
+    const visited = new Set<string>();
+    let current: SessionOwnershipRecord | undefined = session;
+    let directory: string | null = null;
+    while (current && !visited.has(current.id)) {
+      if (resolvedBySessionId.has(current.id)) {
+        directory = resolvedBySessionId.get(current.id) ?? null;
+        break;
+      }
+      visited.add(current.id);
+      lineage.push(current.id);
+      directory = normalizePath(worktreeMetadata.get(current.id)?.path) ?? resolveSessionDirectory(current);
+      if (directory) break;
+      current = current.parentID ? sessionsById.get(current.parentID) : undefined;
+    }
+    for (const sessionId of lineage) resolvedBySessionId.set(sessionId, directory);
+    return directory;
+  };
+};
+
 export const createSessionOwnershipIndex = (
   sessions: SessionOwnershipRecord[],
   projects: Project[],
@@ -173,6 +202,8 @@ export const createSessionOwnershipIndex = (
   const sessionsByProject = new Map<string, Session[]>();
   const archivedSessionsByProject = new Map<string, Session[]>();
   const sessionsByScope = new Map<string, Set<string>>();
+  const sessionsById = new Map([...sessions, ...archivedSessions].map((session) => [session.id, session]));
+  const resolveDirectory = createSessionDirectoryResolver(sessionsById);
 
   const resolveOwner = (directory: string | null): DirectoryOwner | null => {
     if (!directory) return null;
@@ -211,7 +242,7 @@ export const createSessionOwnershipIndex = (
     scopeTarget?: Map<string, Set<string>>,
   ): void => {
     for (const session of input) {
-      const exactOwner = resolveOwner(resolveSessionDirectory(session));
+      const exactOwner = resolveOwner(resolveDirectory(session));
       const owner = exactOwner ?? (!isVSCode
         ? canonicalOwnerByOpenCodeProjectId.get(getOpenCodeProjectId(session) ?? '') ?? null
         : null);

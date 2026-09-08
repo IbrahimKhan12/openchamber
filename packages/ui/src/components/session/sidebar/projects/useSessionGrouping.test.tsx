@@ -227,4 +227,22 @@ describe('useSessionGrouping malformed hierarchy fallbacks', () => {
     expect(groups.find((group) => group.isMain)?.sessions.map((node) => node.session.id)).toEqual(['restored']);
     expect(groups.some((group) => group.isArchivedBucket)).toBe(false);
   });
+
+  test('keeps a mixed archived and live tree in its registered worktree group', () => {
+    const state: { build?: ReturnType<typeof useSessionGrouping>['buildGroupedSessions'] } = {};
+    const Harness = () => {
+      state.build = useSessionGrouping({
+        homeDirectory: null, worktreeMetadata: new Map(), pinnedSessionIds: new Set(),
+        sessionOrderRanks: new Map(), gitBranches: new Map(), isVSCode: false, worktreeSortOrder: 'manual',
+      }).buildGroupedSessions;
+      return null;
+    };
+    renderToStaticMarkup(<I18nProvider><Harness /></I18nProvider>);
+    if (!state.build) throw new Error('grouping callback was not mounted');
+    const parent = { ...session('parent'), directory: '/worktrees/feature', time: { created: 1, updated: 1, archived: 2 } };
+    const child = { ...session('child', parent.id), directory: undefined };
+    const worktree: WorktreeMetadata = { source: 'sdk', name: 'feature', path: '/worktrees/feature', projectDirectory: '/workspace', branch: 'feature', label: 'feature' };
+    const groups = state.build([parent, child], '/workspace', [worktree], null, true);
+    expect(collectIds(groups.find((group) => group.directory === worktree.path)?.sessions ?? [])).toEqual(['parent', 'child']);
+  });
 });
