@@ -2,6 +2,7 @@ import { getActiveRelayTunnel } from './relay/runtime-tunnel';
 import { TUNNEL_PARSE_BASE } from './relay/tunnel-payloads';
 import { buildRuntimeAuthHeaders } from './runtime-auth';
 import { observeRuntimeAuthResponse } from './runtime-auth-expiry';
+import { createTimeoutSignal, isEventStreamUrl, RUNTIME_READ_TIMEOUT_MS } from './runtime-read-timeout';
 import { getRuntimeUrlResolver, type RuntimeUrlQuery } from './runtime-url';
 
 export interface RuntimeFetchOptions extends RequestInit {
@@ -252,13 +253,36 @@ const READ_COALESCE = new Map<string, Promise<Response>>();
 const coalesceReadKey = (method: string, url: string, hasSignal: boolean): string | null => {
   if (hasSignal) return null;
   if (method !== 'GET') return null;
-  if (url.includes('/event')) return null;
+  if (isEventStreamUrl(url)) return null;
   if (!COALESCE_READ_PATH.test(url)) return null;
   return `GET ${url}`;
 };
 
+// ---------------------------------------------------------------------------
+// Read timeout
+//
+// A hang is not a rejection, so an unbounded read never releases what waits on
+// it — the coalesce entry above, the per-directory in-flight maps in the config
+// stores, background concurrency slots — and one half-open socket (#2470) or one
+// project directory on a stalled mount left that project's commands and skills
+// missing until the app restarted (#3467). So bound what we own: a GET with no
+// caller signal, excluding event streams. The coalesce key still reads only the
+// caller's signal, so the bound never disables deduplication.
+// ---------------------------------------------------------------------------
+
 export const runtimeFetch = async (input: string | URL | Request, init: RuntimeFetchOptions = {}): Promise<Response> => {
   const { query, ...requestInit } = init;
+
+  // A Request always carries a (possibly default) signal; treat any Request, or
+  // an explicit init.signal, as caller-supervised.
+  const hasSignal = requestInit.signal != null || input instanceof Request;
+  const method = String(
+    requestInit.method ?? (input instanceof Request ? input.method : 'GET'),
+  ).toUpperCase();
+  const timeout = !hasSignal && method === 'GET' && !isEventStreamUrl(input)
+    ? createTimeoutSignal(RUNTIME_READ_TIMEOUT_MS)
+    : null;
+  const readInit: RequestInit = timeout ? { ...requestInit, signal: timeout.signal } : requestInit;
 
   // Resolve the transport once — relay tunnel or network — then apply the SAME
   // read-coalescing to both. On a relay the tunnel is bandwidth/latency-bound, so
@@ -268,15 +292,13 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
 
   let doFetch: () => Promise<Response>;
   let url: string;
-  let method: string;
   if (relay && relayPath !== null) {
     const inputHeaders = input instanceof Request ? input.headers : undefined;
     const headers = await mergeHeaders(inputHeaders, requestInit.headers, true);
     doFetch = input instanceof Request
-      ? () => relay.fetch(input, { ...requestInit, headers })
-      : () => relay.fetch(relayPath, { ...requestInit, headers });
+      ? () => relay.fetch(input, { ...readInit, headers })
+      : () => relay.fetch(relayPath, { ...readInit, headers });
     url = relayPath;
-    method = String(requestInit.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   } else {
     const resolvedInput = resolveRuntimeFetchInput(input, query);
     const inputHeaders = resolvedInput instanceof Request ? resolvedInput.headers : undefined;
@@ -287,12 +309,9 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
       : String(resolvedInput);
     addRuntimeProxyHeaders(resolvedUrl, headers);
     doFetch = resolvedInput instanceof Request
-      ? () => fetch(new Request(resolvedInput, { ...requestInit, headers }))
-      : () => fetch(resolvedInput, { ...requestInit, headers });
+      ? () => fetch(new Request(resolvedInput, { ...readInit, headers }))
+      : () => fetch(resolvedInput, { ...readInit, headers });
     url = resolvedUrl;
-    method = String(
-      requestInit.method ?? (resolvedInput instanceof Request ? resolvedInput.method : 'GET'),
-    ).toUpperCase();
   }
 
   // Session-expiry classification rides on responses that already flow
@@ -303,15 +322,31 @@ export const runtimeFetch = async (input: string | URL | Request, init: RuntimeF
     return response;
   });
 
-  // A Request always carries a (possibly default) signal; treat any Request, or
-  // an explicit init.signal, as "has signal" and skip coalescing for safety.
-  const hasSignal = requestInit.signal != null || input instanceof Request;
+  if (timeout) {
+    const boundedFetch = doFetch;
+    doFetch = async () => {
+      try {
+        return await boundedFetch();
+      } catch (error) {
+        // Normalized so retry classification reads a transient failure rather
+        // than a caller-initiated abort.
+        if (timeout.signal.aborted) throw new Error(`Runtime request timed out after ${RUNTIME_READ_TIMEOUT_MS}ms`);
+        throw error;
+      } finally {
+        timeout.cleanup();
+      }
+    };
+  }
 
   const key = coalesceReadKey(method, url, hasSignal);
   if (!key) return doFetch();
 
   const existing = READ_COALESCE.get(key);
-  if (existing) return existing.then((res) => res.clone());
+  if (existing) {
+    // Joining an in-flight read: this caller inherits its bound, so drop ours.
+    timeout?.cleanup();
+    return existing.then((res) => res.clone());
+  }
 
   const pending = doFetch();
   READ_COALESCE.set(key, pending);

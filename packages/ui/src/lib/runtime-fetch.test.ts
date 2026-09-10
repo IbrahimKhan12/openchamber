@@ -393,6 +393,90 @@ describe('runtimeFetch read coalescing', () => {
   });
 });
 
+describe('runtimeFetch read timeout', () => {
+  // A read that neither resolves nor rejects (issue #3467: half-open socket, or
+  // a project directory on a stalled mount) used to pin the coalesce entry, the
+  // caller's in-flight map and a background slot until the app restarted.
+  const withShortReadTimeout = async (run: () => Promise<void>): Promise<void> => {
+    const originalTimeout = AbortSignal.timeout;
+    AbortSignal.timeout = () => originalTimeout.call(AbortSignal, 5);
+    try {
+      await run();
+    } finally {
+      AbortSignal.timeout = originalTimeout;
+    }
+  };
+
+  test('bounds a hung GET read and leaves the coalesce entry drained', async () => {
+    const previous = getRuntimeUrlResolver();
+    const abandon: Array<() => void> = [];
+    let calls = 0;
+    // Without the bound the request never settles, so race a watchdog: a
+    // regression must fail here rather than hang the suite.
+    const settle = (request: Promise<Response>) => Promise.race([
+      request.then(() => 'resolved', String),
+      new Promise<string>((resolve) => setTimeout(() => resolve('hung'), 1000)),
+    ]);
+    try {
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://api.example' });
+      const hungFetch: typeof fetch = async (_input, init) => {
+        calls += 1;
+        return new Promise<Response>((_resolve, reject) => {
+          const fail = () => reject(new DOMException('Aborted', 'AbortError'));
+          abandon.push(fail);
+          init?.signal?.addEventListener('abort', fail);
+        });
+      };
+      globalThis.fetch = hungFetch;
+
+      await withShortReadTimeout(async () => {
+        // "request timed out" keeps sync/retry.ts classifying it as transient.
+        expect(await settle(runtimeFetch('/api/config/commands/deploy'))).toContain('request timed out');
+        // The coalesce entry drained, so the next caller gets a fresh request
+        // instead of awaiting the dead one forever.
+        expect(await settle(runtimeFetch('/api/config/commands/deploy'))).toContain('request timed out');
+      });
+
+      expect(calls).toBe(2);
+    } finally {
+      for (const fail of abandon) fail();
+      setRuntimeUrlResolver(previous);
+      globalThis.fetch = originalFetch;
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+
+  test('bounds unsupervised reads only, and never event streams', async () => {
+    const previous = getRuntimeUrlResolver();
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const callerSignal = new AbortController().signal;
+    try {
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://api.example' });
+      const recordingFetch: typeof fetch = async (_input, init) => {
+        signals.push(init?.signal);
+        return new Response('{}', { status: 200 });
+      };
+      globalThis.fetch = recordingFetch;
+
+      await runtimeFetch('/api/config/commands/deploy');
+      await runtimeFetch('/api/event');
+      await runtimeFetch('/api/openchamber/events');
+      await runtimeFetch('/api/session/ses_1/message', { method: 'POST', body: '{}' });
+      await runtimeFetch('/api/config/providers', { signal: callerSignal });
+
+      expect(signals[0]).toBeInstanceOf(AbortSignal);
+      expect(signals[1]).toBeUndefined();
+      expect(signals[2]).toBeUndefined();
+      expect(signals[3]).toBeUndefined();
+      expect(signals[4]).toBe(callerSignal);
+    } finally {
+      setRuntimeUrlResolver(previous);
+      globalThis.fetch = originalFetch;
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+});
+
 describe('runtimeFetch header sanitization', () => {
   test('isLatin1Safe returns true for Latin-1 strings', () => {
     expect(isLatin1Safe('hello')).toBe(true);

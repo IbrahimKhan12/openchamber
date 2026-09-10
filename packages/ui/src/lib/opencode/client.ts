@@ -31,6 +31,7 @@ export type FetchPermissionResult =
   | { state: "unknown" };
 import { getRuntimeUrlResolver } from "@/lib/runtime-url";
 import { runtimeFetch } from "@/lib/runtime-fetch";
+import { createTimeoutSignal, isEventStreamUrl, RUNTIME_READ_TIMEOUT_MS } from "@/lib/runtime-read-timeout";
 import { getRuntimeKey } from "@/lib/runtime-switch";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { markStartupTrace } from "@/lib/startupTrace";
@@ -170,44 +171,6 @@ const resolveRuntimeBaseUrl = (): string | null => {
   }
 };
 
-type AbortSignalConstructorWithTimeout = typeof AbortSignal & {
-  timeout?: (milliseconds: number) => AbortSignal;
-};
-
-const createTimeoutSignal = (timeoutMs: number): { signal: AbortSignal; cleanup: () => void } => {
-  const abortSignal = typeof AbortSignal !== 'undefined'
-    ? AbortSignal as AbortSignalConstructorWithTimeout
-    : undefined;
-  if (typeof abortSignal?.timeout === 'function') {
-    return { signal: abortSignal.timeout(timeoutMs), cleanup: () => undefined };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    cleanup: () => clearTimeout(timeoutId),
-  };
-};
-
-/**
- * Upper bound for non-streaming OpenCode read requests. Without it, a socket
- * that neither resolves nor rejects (the half-open state described in #2470)
- * keeps the bootstrap concurrency slot busy forever and the UI stays on
- * "loading sessions". Long-lived streams (POST prompts, the /event SSE) are
- * explicitly excluded in {@link createRuntimeOpencodeClient}.
- */
-const OPENCODE_REQUEST_TIMEOUT_MS = 30_000;
-
-const isEventStreamUrl = (input: string | URL | Request): boolean => {
-  const url = typeof input === 'string'
-    ? input
-    : input instanceof URL
-      ? input.toString()
-      : input.url;
-  return url.includes('/event');
-};
-
 type RuntimeOpencodeClientConfig = {
   baseUrl: string;
   directory?: string;
@@ -216,7 +179,7 @@ type RuntimeOpencodeClientConfig = {
 };
 
 export const createRuntimeOpencodeClient = (config: RuntimeOpencodeClientConfig): OpencodeClient => {
-  const requestTimeoutMs = config.requestTimeoutMs ?? OPENCODE_REQUEST_TIMEOUT_MS;
+  const requestTimeoutMs = config.requestTimeoutMs ?? RUNTIME_READ_TIMEOUT_MS;
   return createOpencodeClient({
     ...config,
     fetch: async (input: string | URL | Request, init?: RequestInit) => {

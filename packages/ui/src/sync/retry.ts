@@ -7,9 +7,9 @@ export interface RetryOptions {
 }
 
 // undici tears down half-open upstream connection with `TypeError: terminated`
-// (exact failure from the #2470 logs); the SDK client also rejects reads with
-// normalized "request timed out" error after OPENCODE_REQUEST_TIMEOUT_MS.
-// Both are transient — managed process may be restarting.
+// (exact failure from the #2470 logs); the SDK client and the runtime transport
+// both reject reads with normalized "request timed out" error after
+// RUNTIME_READ_TIMEOUT_MS. Both are transient — managed process may be restarting.
 const TRANSIENT_MESSAGES = [
   "load failed",
   "network connection was lost",
