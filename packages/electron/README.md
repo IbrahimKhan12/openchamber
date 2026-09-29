@@ -58,6 +58,8 @@ for the launch paths, controlled reproductions, and Windows validation limits.
 
 Same-origin session-chat iframes complete an authenticated parent-frame handshake before creating their SDK client. The parent supplies its active in-memory endpoint and credentials; when relay is active it also supplies the public relay descriptor without any pairing grant, because Electron preload and IPC are unavailable inside the iframe. The iframe establishes its own transport and rebinds its SDK before rendering. Additional windows retain their own per-window runtime bootstrap instead of being overwritten by the main window. Credentials are never placed in iframe URLs, and other child pages do not receive this runtime state.
 
+An HTML file-preview iframe reports an opaque origin before its first navigation. The desktop navigation guard permits its `/api/fs/serve/` load only when the main app frame starts that navigation in a new direct child. Loaded extension frames and their children cannot navigate to project files, even when their own origin is also opaque.
+
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI.
 
 The compatibility gate can reuse the embedded managed OpenCode CLI preflight
