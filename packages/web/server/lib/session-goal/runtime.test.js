@@ -294,7 +294,10 @@ describe('session goal tick and subagents', () => {
 
     delete active.ses_child_1;
     await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
-    expect(seam.persistSessionGoal.mock.calls.at(-1)[2]).toMatchObject({ status: 'complete' });
+    // The verdict is persisted after the audit resolves, a tick later.
+    await vi.waitFor(() => {
+      expect(seam.persistSessionGoal.mock.calls.at(-1)?.[2]).toMatchObject({ status: 'complete' });
+    });
   });
 
   it('audits once every subagent is idle', async () => {
