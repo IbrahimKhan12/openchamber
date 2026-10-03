@@ -37,21 +37,29 @@ test('leaves the main frame and frames with an origin of their own alone', () =>
   assert.equal(shouldBlockGuestFrameNavigation({ isMainFrame: false, frameOrigin: 'https://docs.example', url: 'https://example.com/', isAppOrigin }), false);
 });
 
-test('allows an app-created HTML preview without letting an extension navigate to files', () => {
+test('allows the app HTML preview without letting an extension reach it', () => {
   const mainFrame = {};
-  const previewFrame = { url: '', parent: mainFrame };
+  const grantA = 'http://127.0.0.1:3902/api/fs/preview/grant-a/tmp/site/index.html';
+  const grantAOther = 'http://127.0.0.1:3902/api/fs/preview/grant-a/tmp/site/about.html';
+  const grantB = 'http://127.0.0.1:3902/api/fs/preview/grant-b/tmp/site/index.html';
+  const emptyFrame = { url: '', parent: mainFrame };
+  const previewFrame = { url: grantA, parent: mainFrame };
   const guestFrame = { url: 'http://127.0.0.1:3902/api/guests/demo/index.html', parent: mainFrame };
-  const fileUrl = 'http://127.0.0.1:3902/api/fs/serve/tmp/index.html?oc_url_token=x';
-  const navigate = (frame, initiator, url = fileUrl) => shouldBlockGuestFrameNavigation({
+  const navigate = (frame, initiator, url) => shouldBlockGuestFrameNavigation({
     isMainFrame: false, frameOrigin: 'null', frame, initiator, mainFrame, url, isAppOrigin,
   });
 
-  assert.equal(navigate(previewFrame, mainFrame), false, 'the app can load its own file preview');
-  assert.equal(navigate(guestFrame, guestFrame), true, 'a loaded guest cannot leave for a file preview');
-  assert.equal(navigate(guestFrame, mainFrame), true, 'a loaded guest is not a new file-preview frame');
-  assert.equal(navigate(previewFrame, previewFrame), true, 'an opaque frame cannot navigate itself to a file preview');
-  assert.equal(navigate({ url: '', parent: guestFrame }, mainFrame), true, 'a nested guest frame cannot load a file preview');
-  assert.equal(navigate(previewFrame, mainFrame, 'https://example.com/api/fs/serve/tmp/index.html'), true, 'a file preview cannot leave the app origin');
-  assert.equal(navigate(previewFrame, mainFrame, 'http://127.0.0.1:3902/api/fs/raw?path=/tmp/file'), true, 'other file routes are not opened');
-  assert.equal(navigate({ get url() { throw new Error('detached'); } }, mainFrame), true, 'a detached frame cannot claim the preview exception');
+  assert.equal(navigate(emptyFrame, mainFrame, grantA), false, 'the app loads a preview into a new frame');
+  assert.equal(navigate(previewFrame, mainFrame, grantB), false, 'the app reloads the preview with a new grant after a save');
+  assert.equal(navigate(previewFrame, previewFrame, grantAOther), false, 'the preview follows its own links within its grant');
+  assert.equal(navigate(previewFrame, previewFrame, grantB), true, 'the preview cannot reach another grant');
+  assert.equal(navigate(previewFrame, previewFrame, 'http://127.0.0.1:3902/api/fs/raw?path=/etc/hosts'), true, 'the preview cannot reach other file routes');
+  assert.equal(navigate(previewFrame, previewFrame, 'https://example.com/'), true, 'the preview cannot leave the app origin');
+  assert.equal(navigate(emptyFrame, emptyFrame, grantA), true, 'an empty frame cannot navigate itself to a preview');
+  assert.equal(navigate(guestFrame, guestFrame, grantA), true, 'a loaded guest cannot navigate to a preview');
+  assert.equal(navigate(guestFrame, mainFrame, grantA), true, 'a loaded guest frame is not a preview frame');
+  assert.equal(navigate({ url: '', parent: guestFrame }, mainFrame, grantA), true, 'a nested frame cannot load a preview');
+  assert.equal(navigate(emptyFrame, mainFrame, 'https://example.com/api/fs/preview/grant-a/x.html'), true, 'a preview cannot come from another origin');
+  assert.equal(navigate({ get url() { throw new Error('detached'); } }, mainFrame, grantA), true, 'a detached frame cannot claim the preview exception');
+  assert.equal(navigate(emptyFrame, mainFrame, 'http://127.0.0.1:3902/api/fs/serve/tmp/index.html'), true, 'the retired serve route is not opened');
 });
