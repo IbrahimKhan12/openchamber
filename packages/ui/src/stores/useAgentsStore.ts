@@ -254,9 +254,17 @@ export const isAgentHidden = (agent: Agent): boolean => {
 export const filterVisibleAgents = (agents: Agent[]): Agent[] =>
   agents.filter((agent) => !isAgentHidden(agent));
 
-// Hidden custom agents remain manageable even though pickers exclude them.
-export const isAgentManageable = (agent: Agent): boolean =>
-  !isAgentHidden(agent) || !isAgentBuiltIn(agent);
+// Hidden custom agents remain manageable even though pickers exclude them. A
+// hidden agent counts as custom only when its config lookup confirmed it
+// (`native === false`): when the lookup failed the built-in flag is unknown,
+// and internal agents (title, compaction, summary) must stay out of Settings.
+export const isAgentManageable = (agent: Agent): boolean => {
+  if (!isAgentHidden(agent)) return true;
+  // SAFETY: store entries are SDK agents that loadAgents may extend with the
+  // optional config-lookup flags; reading an absent flag yields undefined.
+  const extended = agent as AgentWithExtras & { builtIn?: boolean };
+  return extended.native === false && extended.builtIn !== true;
+};
 
 const CONFIG_EVENT_SOURCE = "useAgentsStore";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

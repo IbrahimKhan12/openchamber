@@ -24,12 +24,14 @@ const agent = (name: string, hidden = false, native = false): AgentWithExtras =>
   request: { settings: {}, headers: {}, body: {} }, permissions: [],
 });
 let listedAgents: AgentWithExtras[] = [];
+let failingConfigLookups = new Set<string>();
 const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
   const path = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
   if (path.endsWith('/agent')) return Response.json({ data: listedAgents });
   if (path.startsWith('/api/config/agents/')) {
     const name = decodeURIComponent(path.slice('/api/config/agents/'.length).replace(/\/config$/, ''));
     const current = listedAgents.find((entry) => entry.name === name);
+    if (failingConfigLookups.has(name)) return new Response('boom', { status: 500 });
     if (path.endsWith('/config')) {
       return Response.json({ source: 'md', scope: 'user', path: `/config/agents/${name}.md`, legacy: false,
         config: { hidden: current?.hidden, mode: 'subagent', system: 'Stored instructions' } });
@@ -55,6 +57,7 @@ let container: HTMLElement;
 beforeEach(() => {
   listedAgents = [agent('build', false, true), agent('title', true, true),
     agent('visible-custom'), agent('hidden-custom', true)];
+  failingConfigLookups = new Set();
   useProjectsStore.setState({ projects: [{ id: 'project', path: DIRECTORY }], activeProjectId: 'project' });
   useUIStore.setState({ settingsProjectPath: null });
   invalidateAgentsLoadCache(DIRECTORY);
@@ -90,6 +93,21 @@ describe('Settings hidden custom subagents', () => {
     expect(container.textContent).not.toContain('title');
     expect(container.textContent).toContain('Total 3');
     expect(useAgentsStore.getState().getVisibleAgents().map((entry) => entry.name)).toEqual(['build', 'visible-custom']);
+  });
+
+  test('keeps a hidden agent out when its config lookup fails', async () => {
+    // v2 lists agents without a built-in flag; only the config lookup supplies it.
+    const { native: _native, ...unflaggedTitle } = agent('title', true);
+    listedAgents = [agent('build', false, true), unflaggedTitle, agent('hidden-custom', true)];
+    failingConfigLookups = new Set(['title']);
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await render();
+    } finally {
+      warn.mockRestore();
+    }
+    expect(container.textContent).toContain('hidden-custom');
+    expect(container.textContent).not.toContain('title');
   });
 
   test('keeps the hidden flag from the stored entry when duplicating a custom agent', async () => {
