@@ -1,10 +1,12 @@
 import type { CreateTerminalOptions, TerminalError, TerminalHandlers, TerminalServerSession, TerminalSession, TerminalSessionPurpose, TerminalShellOption, TerminalStreamEvent } from './api/types';
+import type { TerminalChunkSize } from '@/stores/useTerminalStore';
 import { openRuntimeWebSocket } from './relay/runtime-socket';
 import type { RelayTunnelSocketMessageEvent, RelayTunnelWebSocket } from './relay/tunnel-client';
-import { runtimeFetch } from './runtime-fetch';
+import { runtimeFetch, type RuntimeFetchOptions } from './runtime-fetch';
 import { getRuntimeUrlResolver } from './runtime-url';
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from './runtime-auth';
 import { isTerminalShell } from './terminalShell';
+import { spaceApiPath, spaceIdOfDirectory } from './spaces/space-route';
 import { z } from 'zod';
 
 type ClientMessage =
@@ -15,6 +17,9 @@ type Subscriber = { handlers: TerminalHandlers; lastSequence: number };
 type TerminalProjection = {
   sequence: number;
   history: string;
+  /** Current PTY size: what the server reported at attach, updated by every accepted resize. */
+  cols?: number;
+  rows?: number;
   status: TerminalStreamEvent['status'];
   mode?: TerminalSession['mode'];
   purpose?: TerminalSessionPurpose;
@@ -84,6 +89,7 @@ const terminalMessageSchema = z.discriminatedUnion('t', [
   z.object({
     t: z.literal('snapshot'), s: z.string(), q: z.number().int().nonnegative().default(0),
     history: z.string().default(''), status: terminalStatusSchema,
+    cols: z.number().int().positive().optional(), rows: z.number().int().positive().optional(),
     exitCode: z.number().nullish().transform(value => value ?? undefined), signal: z.number().nullable().optional(),
     runtime: terminalRuntimeSchema.optional(), ptyBackend: z.string().optional(), ...terminalMessageMetadata,
   }),
@@ -123,6 +129,10 @@ export class TerminalRequestError extends Error {
     this.code = code;
   }
 }
+
+/** The PTY size a snapshot's history was drawn for, when the server reported one. */
+export const terminalSnapshotSize = (event: Pick<TerminalStreamEvent, 'cols' | 'rows'>): TerminalChunkSize | undefined =>
+  event.cols !== undefined && event.rows !== undefined ? { cols: event.cols, rows: event.rows } : undefined;
 
 export const isTerminalCwdMissingError = (error: unknown): boolean =>
   error instanceof TerminalRequestError && error.code === TERMINAL_CWD_MISSING_CODE;
@@ -171,11 +181,7 @@ export class TerminalTransport {
   private generation = 0;
   private disposed = false;
 
-  constructor(private readonly dependencies: TerminalTransportDependencies = {
-    refreshAuth: refreshRuntimeUrlAuthToken,
-    openSocket: () => openRuntimeWebSocket(getRuntimeUrlResolver().websocket('/api/terminal/ws')),
-    clearUrlAuthToken: clearRuntimeUrlAuthToken,
-  }) {}
+  constructor(private readonly dependencies: TerminalTransportDependencies = hostTransportDependencies()) {}
 
   subscribe(sessionId: string, handlers: TerminalHandlers): () => void {
     this.cancelIdleClose();
@@ -187,7 +193,7 @@ export class TerminalTransport {
     const projection = this.projections.get(sessionId);
     if (projection) {
       subscriber.lastSequence = projection.sequence;
-      handlers.onEvent({ type: 'snapshot', sequence: projection.sequence, data: projection.history, status: projection.status, mode: projection.mode, purpose: projection.purpose, exitCode: projection.exitCode, signal: projection.signal, runtime: projection.runtime, ptyBackend: projection.ptyBackend });
+      handlers.onEvent({ type: 'snapshot', sequence: projection.sequence, data: projection.history, cols: projection.cols, rows: projection.rows, status: projection.status, mode: projection.mode, purpose: projection.purpose, exitCode: projection.exitCode, signal: projection.signal, runtime: projection.runtime, ptyBackend: projection.ptyBackend });
     }
     const socketWasOpen = this.socket?.readyState === SOCKET_OPEN;
     this.ensureConnected().then(() => {
@@ -249,6 +255,17 @@ export class TerminalTransport {
 
   forget(sessionId: string): void {
     this.projections.delete(sessionId);
+  }
+
+  /**
+   * Records a resize the server accepted, so a projection snapshot replayed to
+   * a later subscriber (tab switch, remount) still names the size the
+   * terminal's current screen is drawn for.
+   */
+  noteResize(sessionId: string, cols: number, rows: number): void {
+    const projection = this.projections.get(sessionId);
+    if (!projection) return;
+    this.projections.set(sessionId, { ...projection, cols, rows });
   }
 
   private async ensureConnected(): Promise<void> {
@@ -358,6 +375,8 @@ export class TerminalTransport {
       const projection: TerminalProjection = {
         sequence: message.q ?? 0,
         history: message.history ?? '',
+        cols: message.cols,
+        rows: message.rows,
         status: message.status,
         mode: message.mode,
         purpose: message.purpose,
@@ -369,7 +388,7 @@ export class TerminalTransport {
       this.projections.set(message.s, projection);
       for (const sub of subscribers) {
         sub.lastSequence = projection.sequence;
-        sub.handlers.onEvent({ type: 'snapshot', sequence: projection.sequence, data: projection.history, status: projection.status, mode: projection.mode, purpose: projection.purpose, exitCode: projection.exitCode, signal: projection.signal, runtime: projection.runtime, ptyBackend: projection.ptyBackend });
+        sub.handlers.onEvent({ type: 'snapshot', sequence: projection.sequence, data: projection.history, cols: projection.cols, rows: projection.rows, status: projection.status, mode: projection.mode, purpose: projection.purpose, exitCode: projection.exitCode, signal: projection.signal, runtime: projection.runtime, ptyBackend: projection.ptyBackend });
       }
       return;
     }
@@ -440,10 +459,33 @@ export class TerminalTransport {
   private closeSocket(): void { this.stopKeepalive(); const socket = this.socket; this.socket = null; if (socket && (socket.readyState === SOCKET_CONNECTING || socket.readyState === SOCKET_OPEN)) socket.close(); }
 }
 
-let transport = new TerminalTransport();
+/**
+ * One socket per target: the host, or one isolated space, whose terminals live behind
+ * `/api/spaces/<id>/terminal/ws`. The target is the terminal's working directory, so every
+ * call names it; a call without one is the host's.
+ */
+const HOST_TARGET = '';
+const transports = new Map<string, TerminalTransport>();
+
+function hostTransportDependencies(directory?: string | null): TerminalTransportDependencies {
+  return {
+    refreshAuth: refreshRuntimeUrlAuthToken,
+    openSocket: () => openRuntimeWebSocket(getRuntimeUrlResolver().websocket(spaceApiPath('/api/terminal/ws', directory))),
+    clearUrlAuthToken: clearRuntimeUrlAuthToken,
+  };
+}
+
+function transportFor(directory?: string | null): TerminalTransport {
+  const target = spaceIdOfDirectory(directory) ?? HOST_TARGET;
+  const existing = transports.get(target);
+  if (existing) return existing;
+  const created = new TerminalTransport(hostTransportDependencies(directory));
+  transports.set(target, created);
+  return created;
+}
 
 export async function createTerminalSession(options: CreateTerminalOptions): Promise<TerminalSession> {
-  const response = await runtimeFetch('/api/terminal/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options) });
+  const response = await runtimeFetch('/api/terminal/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options), directory: options.cwd });
   if (!response.ok) throw await responseError(response, 'Failed to create terminal session');
   const payload: unknown = await response.json().catch(() => null);
   const parsed = terminalSessionSchema.safeParse(payload).data;
@@ -451,7 +493,7 @@ export async function createTerminalSession(options: CreateTerminalOptions): Pro
   return parsed;
 }
 export async function listTerminalSessions(cwd: string): Promise<TerminalServerSession[]> {
-  const response = await runtimeFetch(`/api/terminal/sessions?cwd=${encodeURIComponent(cwd)}`);
+  const response = await runtimeFetch(`/api/terminal/sessions?cwd=${encodeURIComponent(cwd)}`, { directory: cwd });
   if (!response.ok) throw await responseError(response, 'Failed to list terminal sessions');
   const payload: unknown = await response.json().catch(() => null);
   const rawSessions = terminalSessionListSchema.safeParse(payload).data?.sessions;
@@ -465,9 +507,9 @@ export async function listTerminalSessions(cwd: string): Promise<TerminalServerS
   }
   return parsed;
 }
-export async function touchTerminalSessions(sessionIds: string[]): Promise<void> {
+export async function touchTerminalSessions(sessionIds: string[], directory?: string | null): Promise<void> {
   if (sessionIds.length === 0) return;
-  await command('/api/terminal/touch', 'POST', { sessionIds });
+  await command('/api/terminal/touch', 'POST', { sessionIds }, directory);
 }
 export async function listTerminalShells(): Promise<TerminalShellOption[]> {
   const response = await runtimeFetch('/api/terminal/shells');
@@ -479,11 +521,11 @@ export async function listTerminalShells(): Promise<TerminalShellOption[]> {
       ))
     : [];
 }
-export function connectTerminalStream(sessionId: string, onEvent: TerminalHandlers['onEvent'], onError?: TerminalHandlers['onError']): () => void { return transport.subscribe(sessionId, { onEvent, onError }); }
-export async function sendTerminalInput(sessionId: string, data: string): Promise<void> { await transport.write(sessionId, data); }
+export function connectTerminalStream(sessionId: string, onEvent: TerminalHandlers['onEvent'], onError?: TerminalHandlers['onError'], directory?: string | null): () => void { return transportFor(directory).subscribe(sessionId, { onEvent, onError }); }
+export async function sendTerminalInput(sessionId: string, data: string, directory?: string | null): Promise<void> { await transportFor(directory).write(sessionId, data); }
 
-async function command(path: string, method: string, body?: unknown): Promise<Response> {
-  const options: RequestInit = { method };
+async function command(path: string, method: string, body?: unknown, directory?: string | null): Promise<Response> {
+  const options: RuntimeFetchOptions = { method, directory };
   if (body !== undefined) {
     options.headers = { 'Content-Type': 'application/json' };
     options.body = JSON.stringify(body);
@@ -492,15 +534,22 @@ async function command(path: string, method: string, body?: unknown): Promise<Re
   if (!response.ok) throw await responseError(response, 'Terminal command failed');
   return response;
 }
-export async function resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void> { await command(`/api/terminal/${sessionId}/resize`, 'POST', { cols, rows }); }
-export async function updateTerminalAppearance(sessionId: string, appearance: Pick<CreateTerminalOptions, 'themeMode' | 'terminalBackground' | 'terminalForeground'>): Promise<void> { await command(`/api/terminal/${sessionId}/appearance`, 'POST', appearance); }
-export async function closeTerminal(sessionId: string): Promise<void> { await command(`/api/terminal/${sessionId}`, 'DELETE'); transport.forget(sessionId); }
-export async function restartTerminalSession(currentSessionId: string, options: CreateTerminalOptions): Promise<TerminalSession> { return (await command(`/api/terminal/${currentSessionId}/restart`, 'POST', options)).json() as Promise<TerminalSession>; }
+export async function resizeTerminal(sessionId: string, cols: number, rows: number, directory?: string | null): Promise<void> {
+  await command(`/api/terminal/${sessionId}/resize`, 'POST', { cols, rows }, directory);
+  transportFor(directory).noteResize(sessionId, cols, rows);
+}
+export async function updateTerminalAppearance(sessionId: string, appearance: Pick<CreateTerminalOptions, 'themeMode' | 'terminalBackground' | 'terminalForeground'>, directory?: string | null): Promise<void> { await command(`/api/terminal/${sessionId}/appearance`, 'POST', appearance, directory); }
+export async function closeTerminal(sessionId: string, directory?: string | null): Promise<void> { await command(`/api/terminal/${sessionId}`, 'DELETE', undefined, directory); transportFor(directory).forget(sessionId); }
+export async function restartTerminalSession(currentSessionId: string, options: CreateTerminalOptions): Promise<TerminalSession> { return (await command(`/api/terminal/${currentSessionId}/restart`, 'POST', options, options.cwd)).json() as Promise<TerminalSession>; }
 export async function forceKillTerminal(options: { sessionId?: string; cwd?: string }): Promise<void> {
-  const response = await command('/api/terminal/force-kill', 'POST', options);
+  const response = await command('/api/terminal/force-kill', 'POST', options, options.cwd);
   const result = await response.json().catch(() => null) as { killedSessionIds?: unknown } | null;
+  const transport = transportFor(options.cwd);
   if (Array.isArray(result?.killedSessionIds)) {
     for (const sessionId of result.killedSessionIds) if (typeof sessionId === 'string') transport.forget(sessionId);
   } else if (options.sessionId) transport.forget(options.sessionId);
 }
-export function disposeTerminalInputTransport(): void { transport.dispose(); transport = new TerminalTransport(); }
+export function disposeTerminalInputTransport(): void {
+  for (const transport of transports.values()) transport.dispose();
+  transports.clear();
+}

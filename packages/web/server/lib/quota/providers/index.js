@@ -5,12 +5,13 @@
  * @module quota/providers
  */
 
+import { readOpenCodeCredentials } from '../../opencode/auth.js';
 import { buildResult } from '../utils/index.js';
 
 import * as claude from './claude/index.js';
+import * as clinePass from './cline-pass.js';
 import * as codex from './codex.js';
 import * as copilot from './copilot.js';
-import * as crof from './crof.js';
 import * as cursor from './cursor.js';
 import * as deepseek from './deepseek.js';
 import * as exeDev from './exe-dev.js';
@@ -37,17 +38,17 @@ const registry = {
     isConfigured: claude.isConfigured,
     fetchQuota: claude.fetchQuota
   },
+  'cline-pass': {
+    providerId: clinePass.providerId,
+    providerName: clinePass.providerName,
+    isConfigured: clinePass.isConfigured,
+    fetchQuota: clinePass.fetchQuota
+  },
   codex: {
     providerId: codex.providerId,
     providerName: codex.providerName,
     isConfigured: codex.isConfigured,
     fetchQuota: codex.fetchQuota
-  },
-  crof: {
-    providerId: crof.providerId,
-    providerName: crof.providerName,
-    isConfigured: crof.isConfigured,
-    fetchQuota: crof.fetchQuota
   },
   cursor: {
     providerId: cursor.providerId,
@@ -168,12 +169,18 @@ const registry = {
 const pendingFetches = new Map();
 
 
-export const listConfiguredQuotaProviders = () => {
+/**
+ * Providers with a usable credential. OpenCode's stored credentials are read
+ * once and handed to every provider; when OpenCode cannot be asked this
+ * throws, so a transient failure does not look like "nothing configured".
+ */
+export const listConfiguredQuotaProviders = async () => {
+  const auth = await readOpenCodeCredentials();
   const configured = [];
 
   for (const [id, provider] of Object.entries(registry)) {
     try {
-      if (provider.isConfigured()) {
+      if (provider.isConfigured(auth)) {
         configured.push(id);
       }
     } catch {

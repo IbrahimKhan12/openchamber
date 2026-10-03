@@ -98,7 +98,7 @@ mock.module('@/stores/useUIStore', () => ({ useUIStore: useUiStoreMock }));
 mock.module('@/stores/useInlineCommentDraftStore', () => ({ useInlineCommentDraftStore: () => ({ addDraft: () => undefined }) }));
 mock.module('@/components/terminal/TerminalViewport', () => ({
   TerminalViewport: React.forwardRef(function TerminalViewportMock(
-    { sessionKey, chunks, isVisible }: { sessionKey: string; chunks: unknown[]; isVisible: boolean },
+    { sessionKey, chunks, isVisible, onResize }: { sessionKey: string; chunks: unknown[]; isVisible: boolean; onResize: (cols: number, rows: number) => void },
     ref: React.ForwardedRef<{ focus: () => void; fit: () => void; getSelection: () => null }>,
   ) {
     React.useImperativeHandle(ref, () => ({
@@ -106,6 +106,11 @@ mock.module('@/components/terminal/TerminalViewport', () => ({
       fit: () => undefined,
       getSelection: () => null,
     }), []);
+    // A real surface reports its fitted grid once it is visible; a visible tab
+    // spawns its shell only after that report.
+    React.useEffect(() => {
+      if (isVisible) onResize(100, 30);
+    }, [isVisible, onResize]);
 
     return React.createElement('div', {
       'data-terminal-viewport': 'true',
@@ -119,7 +124,7 @@ mock.module('@/components/icon/Icon', () => ({
   Icon: ({ name, className }: { name: string; className?: string }) => React.createElement('span', { 'data-icon': name, className }),
 }));
 mock.module('@/components/ui/sortable-tabs-strip', () => ({
-  SortableTabsStrip: ({ items }: { items: Array<{ id: string; label: string; icon?: React.ReactNode }> }) => React.createElement(
+  SortableTabsStrip: ({ items, onClose }: { items: Array<{ id: string; label: string; icon?: React.ReactNode }>; onClose?: (id: string) => void }) => React.createElement(
     'div',
     { 'data-tabs-strip': 'terminal' },
     items.map((item) => React.createElement(
@@ -127,6 +132,7 @@ mock.module('@/components/ui/sortable-tabs-strip', () => ({
       { key: item.id, 'data-tab-id': item.id },
       item.icon,
       React.createElement('span', { 'data-tab-label': item.id }, item.label),
+      React.createElement('button', { type: 'button', 'data-tab-close': item.id, onClick: () => onClose?.(item.id) }),
     )),
   ),
 }));
@@ -229,6 +235,41 @@ describe('TerminalView project action tab indicator', () => {
     useTerminalStore.getState().clearAll();
   });
 
+  test('closing the last tab closes the surface instead of only replacing the tab', async () => {
+    effectiveDirectory = '/solo';
+    useTerminalStore.getState().ensureDirectory('/solo');
+    let lastTabClosedCalls = 0;
+    const onLastTabClosed = () => { lastTabClosedCalls += 1; };
+
+    await act(async () => {
+      root.render(React.createElement(TerminalView, { visible: false, onLastTabClosed }));
+    });
+    const [onlyTab] = useTerminalStore.getState().getDirectoryState('/solo')!.tabs;
+    await act(async () => {
+      host.querySelector<HTMLElement>(`[data-tab-close="${onlyTab!.id}"]`)?.click();
+    });
+    await flushEffects();
+
+    expect(lastTabClosedCalls).toBe(1);
+  });
+
+  test('closing one of several tabs keeps the surface open', async () => {
+    let lastTabClosedCalls = 0;
+    const onLastTabClosed = () => { lastTabClosedCalls += 1; };
+
+    await act(async () => {
+      root.render(React.createElement(TerminalView, { visible: false, onLastTabClosed }));
+    });
+    const [firstTab] = useTerminalStore.getState().getDirectoryState('/repo')!.tabs;
+    await act(async () => {
+      host.querySelector<HTMLElement>(`[data-tab-close="${firstTab!.id}"]`)?.click();
+    });
+    await flushEffects();
+
+    expect(lastTabClosedCalls).toBe(0);
+    expect(useTerminalStore.getState().getDirectoryState('/repo')!.tabs).toHaveLength(2);
+  });
+
   test('shows a spinner only for active project-action tabs and keeps terminal or action icons elsewhere', async () => {
     await act(async () => {
       root.render(React.createElement(TerminalView, { visible: false }));
@@ -303,7 +344,7 @@ describe('TerminalView project action tab indicator', () => {
     expect(ensureDirectoryCalls).not.toContain('/missing-repo');
     expect(createSessionCalls.length).toBe(0);
     expect(host.querySelector('[data-tabs-strip="terminal"]')).toBeNull();
-    expect(host.querySelector('[data-terminal-viewport="true"]')?.getAttribute('data-chunk-count')).toBe('0');
+    expect(host.querySelector('[data-terminal-viewport="true"]')).toBeNull();
   });
 
   test('includes the terminal directory in the viewport identity key', async () => {
@@ -376,7 +417,7 @@ describe('TerminalView project action tab indicator', () => {
     });
     connectBehavior = (_sessionId, handlers) => {
       void Promise.resolve().then(() => {
-        handlers.onEvent({ type: 'snapshot', data: snapshotData, sequence: 7, status: 'running' });
+        handlers.onEvent({ type: 'snapshot', data: snapshotData, sequence: 7, status: 'running', cols: 94, rows: 56 });
       });
       return { close: () => undefined };
     };
@@ -391,6 +432,7 @@ describe('TerminalView project action tab indicator', () => {
     expect(createSessionCalls.length).toBe(0);
     expect(readBufferContent('/repo', actionTab.id)).toBe(snapshotData);
     expect(useTerminalStore.getState().getBuffer('/repo', actionTab.id).lastSequence).toBe(7);
+    expect(useTerminalStore.getState().getBuffer('/repo', actionTab.id).chunks[0]?.size).toEqual({ cols: 94, rows: 56 });
     expect(replaceCount).toBe(1);
   });
 

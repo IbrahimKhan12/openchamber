@@ -54,6 +54,7 @@ export const createWebGitAPI = (): GitAPI => ({
     return gitApiHttp.getGitLog(directory, options);
   },
   getCommitFiles: gitApiHttp.getCommitFiles,
+  getGitCommitDiff: gitApiHttp.getGitCommitDiff,
   getCurrentGitIdentity: gitApiHttp.getCurrentGitIdentity,
   hasLocalIdentity: gitApiHttp.hasLocalIdentity,
   setGitIdentity: gitApiHttp.setGitIdentity,
@@ -82,5 +83,6 @@ export const createWebGitAPI = (): GitAPI => ({
     preview: gitApiHttp.previewGitWorktree,
     create: gitApiHttp.createGitWorktree,
     remove: gitApiHttp.deleteGitWorktree,
+    snapshot: gitApiHttp.snapshotGitWorktree,
   },
 });

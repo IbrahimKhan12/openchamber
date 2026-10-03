@@ -1,3 +1,288 @@
+## [2.1.0] - 2026-10-01
+
+### New
+
+- Chat: shell steps have a Copy output button.
+- Chat: a failed reply has Show response details with what the provider answered.
+
+### Improvements
+
+- Chat: copying selected text from a reply copies it as markdown.
+- Chat: more than four changed files under an answer fold into a +N chip (thanks to @yulia-ivashko).
+- Chat: very long error messages are collapsed (thanks to @yulia-ivashko).
+
+### Fixes
+
+- Chat: very large messages open without freezing, and long answers full of code or logs stream without slowing down (thanks to @yulia-ivashko).
+- Chat: the row with the time and buttons under a message you just sent shows in full (thanks to @yulia-ivashko).
+- Chat: the end of a reply that is still streaming fades out above the message box (thanks to @yulia-ivashko).
+- Model picker: the list stays in place when you star a model (thanks to @yulia-ivashko).
+
+## [2.0.4] - 2026-09-28
+
+### New
+
+- **Dutch interface:** OpenChamber can be used in Dutch (thanks to @herbkk).
+- Enterprise mode: when an administrator turns it on with the policy file on the machine, connecting providers is off and update checks don't report usage.
+
+### Improvements
+
+- Settings opens right away the first time.
+
+### Fixes
+
+- Chat: comments you add in the message box stay on the message they were sent with. The last comment could drop off the message, also after a reload.
+- Chat: Arabic, Hebrew and Persian text reads right to left in messages and in the message box, with punctuation, lists and quotes on the right side (thanks to @yulia-ivashko).
+- Chat: an error in one session stays in that session and no longer appears in every other session you open (thanks to @internetisalie and @yulia-ivashko).
+- Chat: a collapsed long message has a visible expand button that also works from the keyboard (thanks to @bashrusakh).
+- Settings/Agents: OpenCode's own agents appear under Built-in Agents, without rename and delete (thanks to @DeryFerd).
+- Worktrees: a long error in the New Worktree dialog wraps, so you can read the whole path (thanks to @yulia-ivashko).
+
+## [2.0.3] - 2026-09-28
+
+### New
+
+- **Permissions: every session has a mode: ask, safety net or accept all.** The shield in the composer switches it.
+- Settings/Providers: providers are a card grid, and one provider can hold several accounts.
+- Settings: MCP servers and plugins are cards that show their status at a glance.
+
+### Improvements
+
+- **Run on several models replaces the Agent Manager.** The composer runs one prompt on several models, each run is one row in the sessions list, and its overview compares the answers.
+
+### Fixes
+
+- The extension no longer hangs at startup on Windows when the PowerShell profile sits in a OneDrive folder (thanks to @thewerthon).
+- Settings/Providers: custom providers with an API key save again.
+- OpenCode: the extension connects when you set your own `OPENCODE_PASSWORD`.
+- Models: the model picker scrolls through providers with 40 or more models to the last one.
+- Chat: commands that run as a subagent show a running card and then their result.
+- Chat: subagent answers show formatted text.
+- Chat: a message with only a linked GitHub issue can be sent (thanks to @hiro-nikaitou).
+- Sessions: a session deleted outside the extension closes, and messages no longer fail with "Session not found" (thanks to @hiro-nikaitou).
+- Worktrees: removing a worktree on Windows finishes, even when a session was still using its folder (thanks to @bashrusakh).
+- Settings/Plugins: plugins from a private npm registry no longer show as not found (thanks to @Ex0ry).
+- Usage: the Zhipu Coding Plan card shows its limits again (thanks to @CMBill).
+
+## [2.0.2] - 2026-09-26
+
+### Fixes
+
+- The extension connects to OpenCode running as a background service.
+- Chat: answers typed into a question form survive switching sessions.
+- Agents: agents added by plugins show up in the composer without a reload (thanks to @hiro-nikaitou).
+- Chat: the retry countdown shows again while OpenCode waits to retry.
+- Chat: a dollar sign in regular text no longer turns the rest of the line into math (thanks to @hiro-nikaitou).
+- Chat: long identifiers in Markdown tables wrap properly (thanks to @aiiibolo).
+- Small model: commit messages keep working while plugins are still loading.
+
+## [2.0.1] - 2026-09-24
+
+### New
+
+- **Diff: file tree mode.** A toolbar toggle turns the diff view into a file tree with one file open at a time.
+- **Chat: comments stay on the reply.** Quoted text stays highlighted in the reply, and you can edit or remove its comment from there.
+- Chat: the prompt navigator is available in the extension.
+- **Chat: `/fork` with a message.** Type `/fork your message` to branch the session from its last finished reply and send the message into the new session right away.
+
+### Improvements
+
+- Git: the changes tree reads like a real tree, with collapsible folders and file names only.
+- Chat: long code blocks stay smooth while they stream (thanks to @deatheros).
+- Models: the model info panel shows for models from custom providers.
+- Agents: pickers show an agent's display name.
+- Settings/MCP: Code Mode has a Default choice that lets OpenCode decide per server.
+
+### Fixes
+
+- **Skills:** starting a message with `/skill-name` runs the skill again, no more "Command not found" error (thanks to @XiaChuerwu).
+- **Diff view:** the left side of an edit diff keeps the file's indentation.
+- Skills: Settings/Skills lists every skill OpenCode has, and built-in skills stay read-only (thanks to @aiiibolo and @hiro-nikaitou).
+- Chat: `@name` handles and emails in a message no longer turn into missing file attachments that failed the whole message (thanks to @hdp01).
+- Settings/Providers: editing a custom provider keeps its protocol, its API key variable and its reasoning levels as you configured them.
+- Chat: subagent rows show live activity again when you open a session mid-run.
+- Chat: the suggested next message shows up again after a reply.
+- Chat: file mentions with spaces in the path attach the whole file.
+- Chat: clicking a file link in a reply opens the file (thanks to @aiiibolo).
+- Providers: GitHub Copilot and other known providers show their own logo (thanks to @aiiibolo).
+
+## [2.0.0] - 2026-09-23
+
+### New
+
+- **OpenCode 2:** the extension now runs on OpenCode 2, so skills, agents, commands, MCP servers and plugins apply as soon as you save them. With OpenCode 1.x installed, it shows a screen to update, with one-click install. [Read the story on our blog](https://openchamber.dev/blog/opencode-v2/).
+- **Code Mode:** the agent can call your MCP tools and plugin tools from one short script, and the chat shows a Script row with every call it made.
+- Chat: fork a session from an agent answer.
+
+### Improvements
+
+- Chat: writing `/skill` anywhere in a message loads that skill with the message every time.
+- Chat: permission requests say in plain words what the agent wants to do and where, and "Always" names exactly what it will allow.
+- Chat: permission requests and forms appear above the message box, and forms walk through their questions one step at a time.
+- Chat: web search results show as cards with the site, title, date and snippet.
+- Sessions: optional animated activity indicators show running sessions in the sidebar and switcher (thanks to @mattv8).
+- Reviews: new review sessions inherit the current session's permission auto-accept setting.
+
+### Fixes
+
+- Sessions: queued messages and auto-review wait until a session's subagents finish.
+- Chat: edit and patch rows show their added and removed line counts again.
+- Chat: an explicit Steer stays a steer after dismissing blockers (thanks to @JustinKeltner).
+- Chat: approval cards show file changes that were missing from the preview.
+- Chat: comment quote previews fill the available width, and comment highlighting is translucent again.
+- Chat: message image export works when a message links to an external page (thanks to @ChangeHow).
+
+### Misc
+
+- Requires OpenCode 2.0.15 or newer.
+
+## [1.24.2] - 2026-09-18
+
+### Fixes
+
+- **Startup:** opening OpenChamber no longer starts MCP servers and background work for every saved project and worktree, preventing runaway memory use (thanks to @knorby).
+- Chat: malformed Markdown stays readable as plain text without crashing the chat.
+- Chat: switching agents respects each agent's pinned model and thinking level (thanks to @maxiedaniels).
+- Chat: context usage reflects the model that wrote the latest answer.
+- Sessions: Rename closes the session menu and opens the name field again (thanks to @karimodm).
+- Agent Manager: renamed multi-run sessions keep their group, and separate launches with the same label stay separate (thanks to @yulia-ivashko).
+- Worktrees: Enter creates a worktree once from the branch or directory field; confirming text with an input method doesn't create it early.
+- Chat: math formulas use the correct KaTeX fonts (thanks to @Dawnfz-Lenfeng).
+- Themes: Catppuccin dark and light consistently use the Mocha and Latte palettes (thanks to @gbPagano).
+
+## [1.24.1] - 2026-09-18
+
+### New
+
+- Chat: attach files and images to `/btw` messages through the file picker, paste, or drag and drop.
+
+### Improvements
+
+- **Sessions:** large session lists open faster and use less memory, with smoother scrolling across projects (thanks to @deatheros).
+- Chat: lower CPU use while the agent thinks or writes a response (thanks to @deatheros).
+- Interface: clearer checkbox and radio outlines, brighter secondary text, and larger labels make controls easier to read.
+
+### Fixes
+
+- Chat: sending a message no longer briefly flashes "OpenCode did not start a reply".
+- Chat: the queue panel starts expanded, remembers your choice across sessions, and leaves the last messages readable above the queue and `/btw` panels.
+- Chat: inline `$...$` formulas render correctly, and display formulas with apostrophes or ampersands no longer appear as red errors (thanks to @Dawnfz-Lenfeng).
+- Settings/Usage: Gemini 3.x models such as Gemini 3.1 Pro are included in the initial model selection (thanks to @DeryFerd).
+
+## [1.24.0] - 2026-09-17
+
+### Improvements
+
+- Chat: Agent labels and icons use more distinct colors from your VS Code theme.
+- Appearance: Chat backgrounds, menus, and selected items match the corresponding colors in your VS Code theme more closely.
+- Sessions: Sticky headers fade between sections as you scroll the session list, keeping the current section's controls at the top.
+
+### Fixes
+
+- **Sessions:** Reading a response beside your code no longer leaves a false unread dot when you switch to another chat (thanks to @yulia-ivashko).
+- Sessions: Open New Session in Editor starts in the current workspace folder (thanks to @bashrusakh).
+- Chat: Loading models no longer resets your choice, and reloading the extension remembers your selected thinking level, including Default.
+- Chat: Switching sessions no longer loses attachments or carries them into another draft.
+- Chat: Fixed memory use growing as you switch between sessions.
+- Chat: Completed subagent responses render headings, lists, and code blocks correctly (thanks to @bashrusakh).
+- Chat: The selection menu appears above or below your selection so you can still reach the text to copy it (thanks to @yulia-ivashko).
+- Context: After compaction, the counter shows a dash until the next response reports usage, fixing the misleading percentage (thanks to @yulia-ivashko).
+- Settings/Behavior: Changes made to your instructions outside OpenChamber appear when you reopen the page (thanks to @bashrusakh).
+- OpenCode: Restarting OpenCode or closing the extension no longer leaves its old tools running in the background.
+
+### Misc
+
+- Usage: Removed the retired Crof service from usage tracking (thanks to @kydorn).
+
+## [1.23.2] - 2026-09-14
+
+### New
+
+- Chat: Arrange work status sections in your preferred order.
+
+### Improvements
+
+- **Performance:** The extension becomes ready to use sooner, with faster project and worktree session lists and less background work competing with opening a chat.
+- Sessions: Sidebar search runs when you press Enter, keeping typing responsive in large lists. Clearing the field resets results immediately.
+
+### Fixes
+
+- Sessions: Empty worktrees finish loading even when workspace setup is still running.
+- Sessions: Archived subagents no longer reappear as active after an older refresh completes (thanks to @yulia-ivashko and @alexandrereyes).
+- Settings/Projects: Project names keep the letters you type, and renaming preserves the default model and thinking setting (thanks to @yulia-ivashko).
+- Settings/Usage: A failing provider no longer puts its error on another provider's page. Balance-only cards show their value without an empty usage bar (thanks to @yulia-ivashko).
+- Chat: Turn stats no longer display implausibly high token speeds from unreliable timing measurements (thanks to @yulia-ivashko).
+- Chat: The dictation overlay hides the message box's text and buttons underneath it.
+
+## [1.23.1] - 2026-09-11
+
+### New
+
+- Settings/Sessions: Retention cleanup can target archived sessions only, counting their age from the archive date.
+- Chat: Pasted and dropped files get references in the message draft automatically.
+
+### Improvements
+
+- **Chat:** Visual refinements to the message box, attachments, and menus make better use of the space in the sidebar and editor tabs.
+- Chat: Attachments sit inside the message box, and queued messages start collapsed.
+- Sessions: Markdown exports preserve attached quotes and comments with their source.
+- Chat: Removed the changed-files bar above the message box and the extra file dropdown under answers in non-Git folders.
+- Chat: Inline code uses colors from your VS Code theme.
+
+### Fixes
+
+- Sessions: Saved model, agent, and thinking defaults survive reloads and temporary provider unavailability, and their pickers display saved choices sooner (thanks to @alvins82).
+- Chat: The first model you add to favorites stays saved after reloading the panel (thanks to @alvins82).
+- Chat: Reloading panels or moving them between windows now closes old background connections, fixing a connection leak.
+- Chat: Loading older history keeps your reading position, and the latest message stays in view as the message box grows.
+- Chat: Reasoning and shell output continue following incoming text until you scroll up.
+- Chat: File lists under answers use the turn's direct edits, reducing unrelated files from other sessions. Show more reveals files beyond the first four (thanks to @yulia-ivashko).
+- Chat: Queued quotes and comments show their context in the message preview.
+- Chat: Switching projects preserves the available slash commands.
+- Sessions: Retention cleanup keeps protected child sessions and avoids false deletion failures for session families.
+- Sessions: Enter saves a session rename from the sidebar.
+- Projects: Settings save correctly for deeply nested workspace paths (thanks to @yulia-ivashko).
+
+## [1.23.0] - 2026-09-09
+
+### New
+
+- Chat: Replies can contain collapsible Markdown sections that stay open as the answer streams.
+- Projects: Store worktree setup commands and draft starters in the repository from Project settings. Repository commands require trust before running and after changes.
+- Usage: ClinePass now shows five-hour, weekly, and monthly usage limits (thanks to @NemeZZiZZ).
+- Usage: Charm Hyper shows your remaining Hypercredits and their dollar value (thanks to @airtaxi).
+- Settings: "Always show scrollbars" keeps scrollbars visible when the pointer leaves a scrollable area.
+
+### Improvements
+
+- **Chat:** `/btw` now has a separate composer with its own draft, model, and effort. The "By the way…" text-selection action prefills a question with the selected passage (thanks to @ChangeHow).
+- Chat: Completed live Activity can collapse into a tool and file-change summary while the final answer stays visible, following your Activity Default setting.
+- Settings: VS Code keeps its own appearance and chat layout preferences, separate from web, desktop, and mobile.
+- Settings: In narrow panels, Back returns from an item to its list before returning to the settings menu.
+- Chat: Ctrl+N/P navigation works across model lists, menus, and autocomplete. The model picker reopens with your selected model in view (thanks to @ChangeHow).
+- Settings/Chat: Send-shortcut and large-text paste options have clearer descriptions (thanks to @ChangeHow).
+- Chat: More compact Markdown, smaller action buttons, and a softer final-answer divider make replies easier to scan.
+- Chat: Text selection and comment highlights use a consistent, readable accent tint across themes.
+
+### Fixes
+
+- Sessions: New sessions and worktree sessions open without false history-loading errors.
+- Settings: A failed screen load no longer triggers a broken reload of the chat.
+- Chat: Forking a user message fills the destination composer with its prompt and attachments while keeping the original session's draft intact (thanks to @karimodm).
+- Chat: Tools interrupted before a reload no longer keep a running timer indefinitely (thanks to @alvins82).
+- Chat: Images attached to a sent message appear only once.
+- Chat: Resizing the chat keeps the latest reply in view when following the end. Sending or collapsing Activity no longer creates a large blank space below it.
+- Chat: Message details adapt to narrow panels without leaving gaps between the model, effort, and duration.
+- Chat: Long Thinking output stays in a capped scroll box while streaming; scrolling upward pauses its automatic scrolling (thanks to @alvins82).
+- Chat: Narrow tables keep their border and toolbar close to the columns (thanks to @ChangeHow).
+- Usage: Failed refreshes keep the last known figures visible with an error, while other providers continue to load.
+- Usage: OpenRouter reports key spending and limits accurately, including monthly spending for unlimited keys (thanks to @leducmaxime).
+- Usage: Ollama Cloud dollar-based plans show monthly spending and extra credits; credential checks reject unreadable usage pages (thanks to @kydorn).
+- Usage: NeuralWatt shows allowance percentages correctly in both used and remaining modes (thanks to @kydorn).
+- Usage: Provider requests have enough time to connect on slower networks, fixing premature "fetch failed" errors (thanks to @ouyangjian28).
+- Scrollbars: Hover reveals scrollbars in chat, Settings, and shared dialogs without moving the content sideways (thanks to @sergiofspedro).
+- Language/Turkish: Activity and input-history settings use consistent agent and prompt terminology (thanks to @fitzgpt).
+
 ## [1.22.2] - 2026-09-05
 
 ### New

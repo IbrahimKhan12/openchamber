@@ -10,12 +10,14 @@
 import React from 'react';
 
 import { Icon } from '@/components/icon/Icon';
+import { GuestIcon } from '@/components/layout/GuestRailIcon';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { GuestAttachItem } from '@/hooks/useGuestSurfaces';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -24,14 +26,20 @@ type ComposerAttachmentControlsProps = {
     footerIconButtonClass: string;
     iconSizeClass: string;
     handlePickLocalFiles: () => void;
-    openIssuePicker: () => void;
-    openPrPicker: () => void;
+    openGitHubPicker: () => void;
     showLinearPicker?: boolean;
     openLinearPicker?: () => void;
     onOpenSettings?: () => void;
     onMenuOpenChange?: (open: boolean) => void;
     /** Mobile: open the attachment bottom sheet instead of the dropdown menu. */
     onOpenMobileSheet?: () => void;
+    attachGuests?: readonly GuestAttachItem[];
+    onOpenGuestAttach?: (guestId: string) => void;
+    /**
+     * Only offer local files. The `/btw` composer takes files but none of the
+     * linked context (issues, PRs, guests), which stays with the main draft.
+     */
+    filesOnly?: boolean;
 };
 
 export const ComposerAttachmentControls = React.memo(function ComposerAttachmentControls(props: ComposerAttachmentControlsProps) {
@@ -41,17 +49,19 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
         footerIconButtonClass,
         iconSizeClass,
         handlePickLocalFiles,
-        openIssuePicker,
-        openPrPicker,
+        openGitHubPicker,
         showLinearPicker,
         openLinearPicker,
         onOpenSettings,
+        attachGuests,
+        onOpenGuestAttach,
+        filesOnly = false,
     } = props;
 
     return (
         <div className="flex items-center gap-x-1.5">
             <div className="relative inline-flex">
-                {props.onOpenMobileSheet ? (
+                {props.onOpenMobileSheet && !filesOnly ? (
                     <button
                         type="button"
                         className={footerIconButtonClass}
@@ -71,7 +81,7 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
                     >
                         <Icon name="add-circle" className={cn(iconSizeClass, 'text-current')} />
                     </button>
-                ) : isVSCode ? (
+                ) : isVSCode || filesOnly ? (
                     <button
                         type="button"
                         className={footerIconButtonClass}
@@ -104,19 +114,11 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
                             </DropdownMenuItem>
                             <DropdownMenuItem
                                 onSelect={() => {
-                                    requestAnimationFrame(openIssuePicker);
+                                    requestAnimationFrame(openGitHubPicker);
                                 }}
                             >
                                 <Icon name="github"/>
-                                {t('chat.chatInput.actions.linkGithubIssue')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                onSelect={() => {
-                                    requestAnimationFrame(openPrPicker);
-                                }}
-                            >
-                                <Icon name="git-pull-request"/>
-                                {t('chat.chatInput.actions.linkGithubPr')}
+                                {t('chat.chatInput.actions.linkGithub')}
                             </DropdownMenuItem>
                             {showLinearPicker && openLinearPicker ? (
                                 <DropdownMenuItem
@@ -128,6 +130,17 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
                                     {t('chat.chatInput.actions.linkLinearIssue')}
                                 </DropdownMenuItem>
                             ) : null}
+                            {attachGuests?.map((guest) => (
+                                <DropdownMenuItem
+                                    key={guest.id}
+                                    onSelect={() => {
+                                        requestAnimationFrame(() => onOpenGuestAttach?.(guest.id));
+                                    }}
+                                >
+                                    <GuestIcon icon={guest.icon} iconSrc={guest.iconSrc} className="size-4" />
+                                    {guest.name}
+                                </DropdownMenuItem>
+                            ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -154,4 +167,8 @@ export const ComposerAttachmentControls = React.memo(function ComposerAttachment
     && prev.onOpenSettings === next.onOpenSettings
     && prev.onMenuOpenChange === next.onMenuOpenChange
     && prev.onOpenMobileSheet === next.onOpenMobileSheet
+    && prev.onOpenGuestAttach === next.onOpenGuestAttach
+    && prev.filesOnly === next.filesOnly
+    && (prev.attachGuests ?? []).map((guest) => `${guest.id}:${guest.name}:${guest.mode}`).join()
+        === (next.attachGuests ?? []).map((guest) => `${guest.id}:${guest.name}:${guest.mode}`).join()
 ));

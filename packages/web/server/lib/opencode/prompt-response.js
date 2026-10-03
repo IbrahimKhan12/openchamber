@@ -1,14 +1,3 @@
-const formatError = (error) => {
-  if (error instanceof Error) return error.message;
-  if (Object.prototype.toString.call(error) === '[object String]') return String(error);
-  if (error && Object.prototype.toString.call(error.message) === '[object String]') return String(error.message);
-  try {
-    return JSON.stringify(error) ?? String(error);
-  } catch {
-    return String(error);
-  }
-};
-
 const isHtmlResponse = (response) =>
   (response?.headers?.get?.('content-type') || '').toLowerCase().includes('text/html');
 
@@ -17,17 +6,13 @@ export const assertPromptResponse = async (response, operation = 'prompt') => {
     const body = await response.text().catch(() => '');
     throw new Error(`${operation} failed (${response.status})${body ? `: ${body}` : ''}`);
   }
-  if (isHtmlResponse(response)) {
-    throw new Error(`${operation} failed: runtime returned HTML instead of an API response`);
-  }
+  assertOpenCodeApiResponse(response, operation);
 };
 
-export const assertPromptSdkResult = (result, operation = 'prompt') => {
-  const status = result?.response?.status;
-  if (result?.error) {
-    throw new Error(`${operation} failed${status ? ` (${status})` : ''}: ${formatError(result.error)}`);
-  }
-  if (isHtmlResponse(result?.response)) {
+/** Keep SDK status/body decoding intact while refusing a successful app shell. */
+export const assertOpenCodeApiResponse = (response, operation = 'OpenCode request') => {
+  if (response.ok && isHtmlResponse(response)) {
+    void response.body?.cancel().catch(() => undefined);
     throw new Error(`${operation} failed: runtime returned HTML instead of an API response`);
   }
 };
