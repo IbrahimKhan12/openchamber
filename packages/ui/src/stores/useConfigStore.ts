@@ -1468,7 +1468,8 @@ let _initializeAppInFlight: Promise<void> | null = null;
 
 export const invalidateConfigAgentsLoad = (directory?: string | null): void => {
     const runtimeContext = captureConfigRuntimeContext();
-    const directoryKey = toConfigDirectoryKey(directory);
+    // Same default as loadAgents: no directory means the active one, not global.
+    const directoryKey = toConfigDirectoryKey(directory ?? fromDirectoryKey(useConfigStore.getState().activeDirectoryKey));
     const inFlightKey = getConfigLoadKey(runtimeContext, directoryKey);
     _agentsLoadedAt.delete(directoryKey);
     _agentsLoadGeneration.set(inFlightKey, (_agentsLoadGeneration.get(inFlightKey) ?? 0) + 1);
@@ -2635,7 +2636,15 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     if (existing) {
                         markStartupTrace('loadAgents:deduped', { directoryKey, source, requestedDirectory, effectiveDirectory });
-                        return existing;
+                        // Invalidation drops the in-flight entry, so a joined
+                        // read always belongs to the current generation.
+                        const joinedGeneration = _agentsLoadGeneration.get(inFlightKey) ?? 0;
+                        const loaded = await existing;
+                        if (isConfigRuntimeContextCurrent(runtimeContext)
+                            && (_agentsLoadGeneration.get(inFlightKey) ?? 0) !== joinedGeneration) {
+                            return get().loadAgents({ directory: configDirectory, source });
+                        }
+                        return loaded;
                     }
 
                     const loadGeneration = _agentsLoadGeneration.get(inFlightKey) ?? 0;

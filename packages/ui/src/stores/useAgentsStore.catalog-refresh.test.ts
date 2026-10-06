@@ -65,6 +65,20 @@ describe('agent catalog refresh', () => {
     expect(selectAgentsForDirectory(useAgentsStore.getState(), DIRECTORY).map((entry) => entry.name)).toEqual(['new-agent']);
   });
 
+  test('a caller that joined a read before invalidation gets the replacement list', async () => {
+    const staleResponse = deferred<Agent[]>();
+    let listCalls = 0;
+    opencodeClient.listAgents = async () => ++listCalls === 1 ? staleResponse.promise : [agent('new-agent')];
+    const ownerLoad = useAgentsStore.getState().loadAgents(DIRECTORY);
+    const joinedLoad = useAgentsStore.getState().loadAgents(DIRECTORY);
+    invalidateAgentsLoadCache(DIRECTORY);
+    staleResponse.resolve([agent('old-agent')]);
+
+    expect(await ownerLoad).toBe(true);
+    expect(await joinedLoad).toBe(true);
+    expect(selectAgentsForDirectory(useAgentsStore.getState(), DIRECTORY).map((entry) => entry.name)).toEqual(['new-agent']);
+  });
+
   test('runtime reset rejects an older load for the same directory', async () => {
     const staleResponse = deferred<Agent[]>();
     let listCalls = 0;

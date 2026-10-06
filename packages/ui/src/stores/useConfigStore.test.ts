@@ -1566,6 +1566,29 @@ describe('useConfigStore provider persistence', () => {
       .toEqual(['new-agent']);
   });
 
+  test('a caller that joined an agent load before invalidation gets the replacement list', async () => {
+    const staleAgents = deferred<TestAgent[]>();
+    let calls = 0;
+    listAgentsImpl = async () => {
+      calls += 1;
+      if (calls === 1) return staleAgents.promise;
+      return [{ name: 'new-agent', mode: 'primary' }];
+    };
+
+    const ownerLoad = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:owner' });
+    const joinedLoad = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:joined' });
+    await Promise.resolve();
+    expect(calls).toBe(1);
+
+    invalidateConfigAgentsLoad(DIRECTORY);
+    staleAgents.resolve([{ name: 'old-agent', mode: 'primary' }]);
+
+    expect(await ownerLoad).toBe(true);
+    expect(await joinedLoad).toBe(true);
+    expect(selectConfigAgentsForDirectory(useConfigStore.getState(), DIRECTORY).map((entry) => entry.name))
+      .toEqual(['new-agent']);
+  });
+
   test('publishes configured defaults before slow catalogs finish', async () => {
     const providers = deferred<TestProviderResponse>();
     const agents = deferred<TestAgent[]>();

@@ -465,10 +465,22 @@ export const useAgentsStore = create<AgentsStore>()(
             return true;
           }
 
+          const runtimeGeneration = agentsGeneration;
+          const runtimeKey = getRuntimeKey();
+          // A catalog event may retire the read a create/delete is waiting for.
+          // That caller still needs the current list, not a failed mutation toast.
+          const wasRetired = (loadGeneration: number) => (
+            agentsGeneration === runtimeGeneration
+            && getRuntimeKey() === runtimeKey
+            && (agentsLoadGeneration.get(cacheKey) ?? 0) !== loadGeneration
+          );
+
           let inFlight = agentsLoadInFlight.get(cacheKey);
           while (inFlight) {
             if (inFlight.generation === (agentsLoadGeneration.get(cacheKey) ?? 0)) {
-              return inFlight.request;
+              const joined = inFlight;
+              const loaded = await joined.request;
+              return wasRetired(joined.generation) ? get().loadAgents(configDirectory) : loaded;
             }
             // Started before the latest invalidation: let it settle so it cannot
             // commit after this read, then read again.
@@ -477,8 +489,6 @@ export const useAgentsStore = create<AgentsStore>()(
           }
 
           const generation = agentsLoadGeneration.get(cacheKey) ?? 0;
-          const runtimeGeneration = agentsGeneration;
-          const runtimeKey = getRuntimeKey();
           const isCurrentLoad = () => (
             agentsGeneration === runtimeGeneration
             && (agentsLoadGeneration.get(cacheKey) ?? 0) === generation
@@ -595,13 +605,7 @@ export const useAgentsStore = create<AgentsStore>()(
           } finally {
             if (agentsLoadInFlight.get(cacheKey) === entry) agentsLoadInFlight.delete(cacheKey);
           }
-          // A catalog event may retire the read a create/delete is waiting for.
-          // That caller still needs the current list, not a failed mutation toast.
-          if (agentsGeneration === runtimeGeneration && getRuntimeKey() === runtimeKey
-            && (agentsLoadGeneration.get(cacheKey) ?? 0) !== generation) {
-            return get().loadAgents(configDirectory);
-          }
-          return loaded;
+          return wasRetired(generation) ? get().loadAgents(configDirectory) : loaded;
         },
 
         fetchAgentEntity: async (name: string, requestedDirectory?: string | null) => {
