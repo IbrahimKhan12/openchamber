@@ -1588,7 +1588,9 @@ const readMcpEntriesAcrossLayers = (layers: ReturnType<typeof readConfigLayers>)
 
 export const listMcpConfigs = (workingDirectory?: string): McpConfigEntry[] => {
   const layers = readConfigLayers(workingDirectory);
-  return Array.from(readMcpEntriesAcrossLayers(layers).entries()).map(([name, entry]) => {
+  const entries = readMcpEntriesAcrossLayers(layers);
+  if (entries.size === 0) throwIfLayerError(layers, layers.paths.userOverridePath);
+  return Array.from(entries.entries()).map(([name, entry]) => {
     const source = getJsonEntrySource(layers, 'mcp', name);
     return {
       name,
@@ -1604,6 +1606,7 @@ export const getMcpConfig = (name: string, workingDirectory?: string): McpConfig
   const layers = readConfigLayers(workingDirectory);
   const entry = readMcpEntriesAcrossLayers(layers).get(name);
   if (!entry) {
+    throwIfLayerError(layers, layers.paths.userOverridePath);
     return null;
   }
   const source = getJsonEntrySource(layers, 'mcp', name);

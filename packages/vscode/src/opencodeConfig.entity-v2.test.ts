@@ -319,6 +319,10 @@ describe('VS Code entity modules speak OpenCode 2 shapes', () => {
       assert.throws(() => updateMcpConfig('docs', { disabled: false }, projectDir), /contains invalid JSONC/);
       assert.equal(fs.readFileSync(jsonPath, 'utf8'), primary);
       assert.equal(fs.readFileSync(jsoncPath, 'utf8'), malformed);
+
+      fs.writeFileSync(jsonPath, '{}', 'utf8');
+      assert.throws(() => listMcpConfigs(projectDir), /contains invalid JSONC/);
+      assert.throws(() => getMcpConfig('docs', projectDir), /contains invalid JSONC/);
     } finally {
       fs.rmSync(jsonPath, { force: true });
       fs.rmSync(jsoncPath, { force: true });

@@ -293,6 +293,8 @@ When both global files exist, the MCP list reads `opencode.jsonc` after
 `opencode.json`. Editing or deleting a listed server updates the file that
 defines it; without `OPENCODE_CONFIG`, a new user-scoped server goes into the
 primary config file.
+An invalid secondary file cannot answer an empty MCP list or a missing-server
+lookup as success; those reads report the parse error instead.
 No files are migrated. The behavior GET bridge response includes the effective
 `path` for both existing and missing AGENTS.md files; shared Settings uses it
 in the warning.
