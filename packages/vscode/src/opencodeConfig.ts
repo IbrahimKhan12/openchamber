@@ -735,10 +735,11 @@ const readConfigLayers = (workingDirectory?: string) => {
 
   return {
     userConfig: userLayer.config,
+    userOverrideConfig: userOverrideLayer.config,
     projectConfig: projectLayer.config,
     customConfig: customLayer.config,
     mergedConfig,
-    paths: { userPath, projectPath, customPath },
+    paths: { userPath, userOverridePath, projectPath, customPath },
     layerErrors,
   };
 };
@@ -1581,9 +1582,9 @@ const validateMcpName = (name: string): void => {
   }
 };
 
-/** Same precedence as `getJsonEntrySource`: custom > project > user. */
+/** Same precedence as `getJsonEntrySource`: custom > project > user override > user. */
 const readMcpEntriesAcrossLayers = (layers: ReturnType<typeof readConfigLayers>) =>
-  readLayeredMcpEntries([layers.userConfig, layers.projectConfig, layers.customConfig]);
+  readLayeredMcpEntries([layers.userConfig, layers.userOverrideConfig, layers.projectConfig, layers.customConfig]);
 
 export const listMcpConfigs = (workingDirectory?: string): McpConfigEntry[] => {
   const layers = readConfigLayers(workingDirectory);
@@ -1743,6 +1744,12 @@ const getJsonEntrySource = (
   if (paths.projectPath && !getLayerError(layers, paths.projectPath)) {
     const project = found(projectConfig, paths.projectPath);
     if (project) return project;
+  }
+
+  if (paths.userOverridePath) {
+    throwIfLayerError(layers, paths.userOverridePath);
+    const userOverride = found(layers.userOverrideConfig, paths.userOverridePath);
+    if (userOverride) return userOverride;
   }
 
   throwIfLayerError(layers, paths.userPath);

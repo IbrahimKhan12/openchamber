@@ -289,6 +289,10 @@ resolves `OPENCODE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/opencode`, else
 `~/.config/opencode` at extension startup (the same rule OpenCode 2 applies);
 only `opencode.json(c)` is a config file, the v1 `config.json` is not read. Project paths, the explicit
 `OPENCODE_CONFIG` file layer, and the auth data directory stay separate.
+When both global files exist, the MCP list reads `opencode.jsonc` after
+`opencode.json`. Editing or deleting a listed server updates the file that
+defines it; without `OPENCODE_CONFIG`, a new user-scoped server goes into the
+primary config file.
 No files are migrated. The behavior GET bridge response includes the effective
 `path` for both existing and missing AGENTS.md files; shared Settings uses it
 in the warning.
