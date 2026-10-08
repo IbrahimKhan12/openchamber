@@ -307,7 +307,6 @@ mock.module('./markdown/decorate', () => ({
     getMarkdownCodeText: () => '',
     stabilizeMarkdownTableWidths: () => undefined,
 }));
-mock.module('./markdown/textPosition', () => ({ findTextPosition: () => null }));
 mock.module('./markdown/mermaidViewer', () => ({
     createMermaidViewerRegistry: () => {
         mermaidRegistryCreates += 1;

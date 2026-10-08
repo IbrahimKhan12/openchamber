@@ -67,6 +67,7 @@ let tableProbeWidths: Map<string, number> | null = null;
 type ResizeNotifier = (entries: Array<{ target: Element; contentRect: { width: number; height: number } }>) => void;
 let notifyResize: ResizeNotifier | null = null;
 let notifyTableResize: ResizeNotifier | null = null;
+let effectiveDirectoryForTest: string | null = null;
 let MarkdownRenderer: React.ComponentType<{
   content: string;
   messageId: string;
@@ -301,7 +302,7 @@ const initializePerformanceDom = async (): Promise<void> => {
   mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
   mock.module('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => null }));
   mock.module('@/stores/useUIStore', () => ({ useUIStore: Object.assign((selector: (state: typeof fakeState) => UIStateSelection) => selector(fakeState), { getState: () => fakeState }) }));
-  mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null }));
+  mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => effectiveDirectoryForTest }));
   mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ editor: undefined, runtime: { isVSCode: false } }) }));
   mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => ({ ok: false }) }));
   mock.module('@/lib/url', () => ({ getUrlScheme: () => null, isAppLinkUrl: () => false, isExternalHttpUrl: () => false, openConfirmedAppLinkUrl: async () => false, openExternalUrl: async () => undefined, getExternalFaviconUrl: () => null, isLoopbackHttpUrl: () => false }));
@@ -338,6 +339,68 @@ afterAll(() => {
 });
 
 describe('MarkdownRenderer DOM mount performance contract', () => {
+  test('wraps fragmented code paths without rescanning the text nodes for each match', async () => {
+    const adjacentPaths = ['src/adjacent-one.ts:1', 'src/adjacent-two.ts:2'];
+    const paths = Array.from({ length: 24 }, (_, index) => `src/module-${index}.ts:${index + 1}`);
+    const content = ['```text', adjacentPaths.join(' '), ...paths.map((path) => `${path} result`), '```'].join('\n');
+    const host = document.createElement('div');
+    document.body.replaceChildren(host);
+    const root = createRoot(host);
+    effectiveDirectoryForTest = '/workspace';
+
+    try {
+      await act(async () => {
+        root.render(<MarkdownRenderer content={content} messageId="code-paths" isAnimated={false} />);
+        await waitForSettledEffects();
+      });
+      await act(async () => waitForSettledEffects());
+      const code = host.querySelector<HTMLElement>('pre code');
+      if (!code) throw new Error('Expected a rendered code block');
+      code.replaceChildren(
+        document.createTextNode(adjacentPaths.join(' ')),
+        document.createTextNode('\n'),
+        ...paths.flatMap((path) => [
+          document.createTextNode(path.slice(0, 4)),
+          document.createTextNode(path.slice(4, 11)),
+          document.createTextNode(path.slice(11)),
+          document.createTextNode(' result'),
+          document.createTextNode('\n'),
+        ]),
+      );
+      const originalText = code.textContent;
+      const trackedNodes = new Set<Node>();
+      const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) trackedNodes.add(node);
+      const textPrototype = Object.getPrototypeOf(document.createTextNode(''));
+      const ownDescriptor = Object.getOwnPropertyDescriptor(textPrototype, 'data');
+      const dataDescriptor = ownDescriptor ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textPrototype), 'data');
+      if (!dataDescriptor?.get) throw new Error('Expected the Text.data getter');
+      let dataReads = 0;
+      Object.defineProperty(textPrototype, 'data', {
+        ...dataDescriptor,
+        get(this: Text) {
+          if (trackedNodes.has(this)) dataReads += 1;
+          return dataDescriptor.get?.call(this);
+        },
+      });
+      try {
+        await new Promise<void>((resolve) => setTimeout(resolve, 180));
+        await flushAnimationFrame();
+      } finally {
+        if (ownDescriptor) Object.defineProperty(textPrototype, 'data', ownDescriptor);
+        else Reflect.deleteProperty(textPrototype, 'data');
+      }
+
+      expect(code.getAttribute('data-openchamber-block-paths-scanned')).toBe('true');
+      expect(Array.from(code.querySelectorAll('[data-openchamber-block-path-token]'), (span) => span.textContent)).toEqual([...adjacentPaths, ...paths]);
+      expect(code.textContent).toBe(originalText);
+      expect(dataReads).toBeLessThan(trackedNodes.size * 5);
+    } finally {
+      effectiveDirectoryForTest = null;
+      await act(async () => root.unmount());
+    }
+  });
+
   test('preserves disclosure choices through streaming, settlement, and redecorating', async () => {
     const host = document.createElement('div');
     document.body.replaceChildren(host);

@@ -45,7 +45,7 @@ import {
 } from './markdown/decorate';
 import type { RenderedCopyFormat } from './markdown/selectionMarkdown';
 import { observeMarkdownTableWidth } from './markdown/tableWidthObserver';
-import { findTextPosition } from './markdown/textPosition';
+import { createTextPositionIndex } from './markdown/textPosition';
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import {
   BLOCK_PATH_TOKEN_RE,
@@ -334,9 +334,14 @@ const wrapBlockCodePathTokens = (container: HTMLElement): void => {
       match = BLOCK_PATH_TOKEN_RE.exec(fullText);
     }
 
-    for (const { start, end, raw } of matches.reverse()) {
-      const startPosition = findTextPosition(textNodes, start, 'right');
-      const endPosition = findTextPosition(textNodes, end, 'left');
+    const findPosition = createTextPositionIndex(textNodes);
+    // Resolve every boundary before ranges split or remove the indexed text nodes.
+    const positionedMatches = matches.map(({ start, end, raw }) => ({
+      startPosition: findPosition(start, 'right'),
+      endPosition: findPosition(end, 'left'),
+      raw,
+    }));
+    for (const { startPosition, endPosition, raw } of positionedMatches.reverse()) {
       if (!startPosition || !endPosition) {
         continue;
       }
