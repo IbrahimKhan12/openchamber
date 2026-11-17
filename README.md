@@ -1,5 +1,7 @@
 # Git URL evidence for OpenChamber #7088
 
-Fix commit: d64a5d4cfd4cfa71f3515a17f69bf17d4b0fb5e2.
+Current fix commit: deca9646588b94109ed494750fe68391804c7365.
 
-The before screenshot shows the reported Sync hydration failure on unchanged main. The after screenshot shows the completed Sync with no pending push. Both captures use disposable fixture repositories with the reported trailing-slash URLs and no LFS files.
+The original Git-panel screenshots show valid trailing-slash URLs failing before normalization and completing Sync after normalization.
+
+The diagnostic screenshots use a rejected URL with fixture credentials. Before the extension, the row names Git LFS at path dot. After it, the row names the offending submodule at extras/third_party/libjxl. Fixed-message redaction still removes the credentials, and a fresh saved-operation read retains the module path.
