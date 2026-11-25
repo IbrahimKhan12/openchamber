@@ -1,0 +1,144 @@
+name: Windows npm Bun reproduction
+
+on:
+  push:
+    branches: [test/7619-windows-npm-bun]
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+
+      - name: Install Bun through npm and isolate the shims
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $prefix = Join-Path $env:RUNNER_TEMP 'oc-npm-bun'
+          npm.cmd install --global --prefix "$prefix" bun@1.4.5
+          if ($LASTEXITCODE -ne 0) { throw 'npm could not install Bun' }
+          $nodeDir = Split-Path (Get-Command node.exe).Source
+          $gitDir = Split-Path (Get-Command git.exe).Source
+          $env:PATH = "$prefix;$nodeDir;$gitDir;$env:SystemRoot\System32;$env:SystemRoot"
+          "TEST_NPM_PATH=$env:PATH" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "TEST_BUN_SHIM=$prefix\bun.cmd" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          where.exe bun.cmd
+          if ($LASTEXITCODE -ne 0) { throw 'npm did not expose bun.cmd' }
+          where.exe bunx.cmd
+          if ($LASTEXITCODE -ne 0) { throw 'npm did not expose bunx.cmd' }
+          $direct = where.exe bun.exe 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "Direct Bun is still on PATH: $direct" }
+          $expected = Join-Path $prefix 'node_modules\bun\bin\bun.exe'
+          if (!(Test-Path -LiteralPath $expected -PathType Leaf)) { throw "Missing native Bun from npm: $expected" }
+          $version = & "$prefix\bun.cmd" --version
+          if ($LASTEXITCODE -ne 0 -or $version -ne '1.4.5') { throw 'npm Bun did not start at version 1.4.5' }
+          Write-Host "Bun $version via bun.cmd"
+          node.exe --version
+          $script = @'
+          const { spawnSync } = require('node:child_process');
+          for (const name of ['bun', 'bunx']) {
+            const { error, status } = spawnSync(name, ['--version'], { encoding: 'utf8' });
+            console.log({ platform: process.platform, name, status, error: error?.code });
+            if (process.platform !== 'win32' || !['ENOENT', 'EINVAL'].includes(error?.code)) process.exitCode = 1;
+          }
+          '@
+          node.exe -e $script
+          if ($LASTEXITCODE -ne 0) { throw 'Node can launch a bare Bun command; this is not the reported setup' }
+
+      - name: Install the locked lint dependencies
+        run: |
+          $env:PATH = $env:TEST_NPM_PATH
+          & $env:TEST_BUN_SHIM install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen dependency install failed' }
+
+      - name: Compare main and the fix under the npm shims
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $env:PATH = $env:TEST_NPM_PATH
+          function Expect-Command {
+            param([string]$Label, [int]$Code, [string]$Text, [scriptblock]$Run)
+            $ErrorActionPreference = 'Continue'
+            $output = & $Run 2>&1 | Out-String
+            $actual = $LASTEXITCODE
+            Write-Host "${Label}: exit $actual"
+            Write-Host $output
+            if ($actual -ne $Code -or $output -notmatch $Text) {
+              throw "$Label did not exit $Code and report $Text"
+            }
+          }
+
+          $base = (git rev-parse 'HEAD^1').Trim()
+          $files = @('scripts/check-changed.mjs', 'scripts/anti-slop.mjs', 'packages/web/scripts/check-server-types.mjs', 'scripts/lib/bun-executable.mjs')
+          $probe = 'windows-bun-probe.mjs'
+          $claims = Join-Path $env:RUNNER_TEMP 'oc-7619-claims'
+          Set-Content -LiteralPath $probe -Encoding utf8NoBOM -Value "export const probe = Reflect.get({ name: 'probe' }, 'name');"
+          try {
+            git restore --source=$base --worktree -- $files
+            if ($LASTEXITCODE -ne 0) { throw 'Could not load baseline scripts' }
+            Expect-Command 'main check:changed' 1 'oxlint produced no report: (undefined|null)' {
+              & $env:TEST_BUN_SHIM run check:changed -- --base $base --ratchet-only
+            }
+            Expect-Command 'main deslop file' 1 'spawnSync bunx (ENOENT|EINVAL)' {
+              & $env:TEST_BUN_SHIM run deslop -- file $probe --claims-dir $claims
+            }
+
+            git restore --source=HEAD --worktree -- $files
+            if ($LASTEXITCODE -ne 0) { throw 'Could not load candidate scripts' }
+            Expect-Command 'fixed check:changed' 1 '(?s)no-reflect-get\): 0 . 1 \(grew in windows-bun-probe\.mjs\).*Failed: ratchet\s*\n' {
+              & $env:TEST_BUN_SHIM run check:changed -- --base $base --ratchet-only
+            }
+            Expect-Command 'fixed deslop file' 0 '(?s)1 findings.*line 1:\d+\s+error\s+no-reflect-get' {
+              & $env:TEST_BUN_SHIM run deslop -- file $probe --claims-dir $claims
+            }
+
+            Remove-Item Env:npm_execpath -ErrorAction SilentlyContinue
+            Expect-Command 'Node resolves bun.cmd without a Bun parent' 0 '(?s)1 findings.*line 1:\d+\s+error\s+no-reflect-get' {
+              node.exe scripts/anti-slop.mjs file $probe --claims-dir $claims
+            }
+            $npmPath = $env:PATH
+            try {
+              $env:PATH = ($npmPath -split ';' | Where-Object { $_ -ne (Split-Path $env:TEST_BUN_SHIM) }) -join ';'
+              Expect-Command 'missing Bun reports a spawn error' 1 'spawnSync bun (ENOENT|EINVAL)' {
+                node.exe scripts/anti-slop.mjs file $probe --claims-dir $claims
+              }
+              $modules = Join-Path $env:RUNNER_TEMP 'npm local install\node_modules'
+              $npmBin = Join-Path $modules '.bin'
+              New-Item -ItemType Directory -Path $npmBin -Force | Out-Null
+              Copy-Item -LiteralPath (Join-Path (Split-Path $env:TEST_BUN_SHIM) 'node_modules\bun') -Destination $modules -Recurse
+              Set-Content -LiteralPath (Join-Path $npmBin 'bun.cmd') -Value '@"%~dp0\..\bun\bin\bun.exe" %*'
+              $env:PATH = "$npmBin;$env:PATH"
+              Expect-Command 'Node resolves a node_modules/.bin Bun shim' 0 '(?s)1 findings.*line 1:\d+\s+error\s+no-reflect-get' {
+                node.exe scripts/anti-slop.mjs file $probe --claims-dir $claims
+              }
+            } finally {
+              $env:PATH = $npmPath
+            }
+            if (Test-Path -LiteralPath $claims) { throw 'A read-only deslop command wrote claims' }
+          } finally {
+            git restore --source=HEAD --worktree -- $files
+            Remove-Item -LiteralPath $probe -ErrorAction SilentlyContinue
+          }
+
+      - name: Run the full changed-files gate with npm Bun
+        run: |
+          $env:PATH = $env:TEST_NPM_PATH
+          & $env:TEST_BUN_SHIM install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen install with postinstall failed' }
+          $base = (git rev-parse 'HEAD^1').Trim()
+          & $env:TEST_BUN_SHIM run check:changed -- --base $base
+          if ($LASTEXITCODE -ne 0) { throw 'Full gate failed' }

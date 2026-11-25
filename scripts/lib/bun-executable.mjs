@@ -42,13 +42,11 @@ export function resolveBunExecutable(options = {}) {
 
     const shim = findOnPath('bun.cmd', env);
     if (shim) {
-      const executable = pathApi.resolve(
-        pathApi.dirname(shim),
-        'node_modules',
-        'bun',
-        'bin',
-        'bun.exe',
-      );
+      const shimDir = pathApi.dirname(shim);
+      const modulesDir = pathApi.basename(shimDir).toLowerCase() === '.bin'
+        ? pathApi.dirname(shimDir)
+        : pathApi.join(shimDir, 'node_modules');
+      const executable = pathApi.resolve(modulesDir, 'bun', 'bin', 'bun.exe');
       if (fileExists(executable)) {
         return executable;
       }
