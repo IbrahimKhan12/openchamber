@@ -38,6 +38,7 @@ test('derives bun.exe when Windows PATH exposes only an npm bun.cmd shim', () =>
   const shims = [
     ['C:\\Users\\dev\\AppData\\Roaming\\npm\\bun.cmd', 'C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\bun\\bin\\bun.exe'],
     ['C:\\Dev Projects\\node_modules\\.bin\\bun.cmd', 'C:\\Dev Projects\\node_modules\\bun\\bin\\bun.exe'],
+    ['C:\\Tools\\node_modules\\.bin\\bun.cmd', 'C:\\Tools\\node_modules\\.bin\\node_modules\\bun\\bin\\bun.exe'],
   ];
   for (const [shim, executable] of shims) {
     assert.equal(resolveBunExecutable({

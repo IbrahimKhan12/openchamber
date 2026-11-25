@@ -108,7 +108,7 @@ function runOxlint() {
     windowsHide: true,
   });
   if (result.error) throw result.error;
-  if (!result.stdout) throw new Error(`oxlint produced no report: ${result.stderr.trim() || result.signal || `exit code ${result.status}`}`);
+  if (!result.stdout) throw new Error(`oxlint produced no report: ${result.stderr?.trim() || result.signal || `exit code ${result.status}`}`);
   const report = JSON.parse(result.stdout);
   return { diagnostics: normalizeDiagnostics(report.diagnostics ?? []) };
 }

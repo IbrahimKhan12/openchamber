@@ -179,7 +179,7 @@ const runOxlint = (bun, files, cwd) => {
     cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, windowsHide: true,
   });
   if (result.error) throw result.error;
-  if (!result.stdout) throw new Error(`oxlint produced no report: ${result.stderr.trim() || result.signal || `exit code ${result.status}`}`);
+  if (!result.stdout) throw new Error(`oxlint produced no report: ${result.stderr?.trim() || result.signal || `exit code ${result.status}`}`);
   return parseOxlintReport(result.stdout);
 };
 

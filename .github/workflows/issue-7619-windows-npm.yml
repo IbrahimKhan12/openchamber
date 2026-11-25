@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 3
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -66,6 +66,12 @@ jobs:
           & $env:TEST_BUN_SHIM install --frozen-lockfile --ignore-scripts
           if ($LASTEXITCODE -ne 0) { throw 'Frozen dependency install failed' }
 
+      - name: Run the focused Windows resolver tests
+        run: |
+          $env:PATH = $env:TEST_NPM_PATH
+          node.exe --test scripts/lib/bun-executable.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Bun resolver tests failed' }
+
       - name: Compare main and the fix under the npm shims
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
@@ -82,7 +88,7 @@ jobs:
             }
           }
 
-          $base = (git rev-parse 'HEAD^1').Trim()
+          $base = '3853549dff50329d78dcba89a5d6259ea11b6cea'
           $files = @('scripts/check-changed.mjs', 'scripts/anti-slop.mjs', 'packages/web/scripts/check-server-types.mjs', 'scripts/lib/bun-executable.mjs')
           $probe = 'windows-bun-probe.mjs'
           $claims = Join-Path $env:RUNNER_TEMP 'oc-7619-claims'
@@ -139,6 +145,6 @@ jobs:
           $env:PATH = $env:TEST_NPM_PATH
           & $env:TEST_BUN_SHIM install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Frozen install with postinstall failed' }
-          $base = (git rev-parse 'HEAD^1').Trim()
+          $base = '3853549dff50329d78dcba89a5d6259ea11b6cea'
           & $env:TEST_BUN_SHIM run check:changed -- --base $base
           if ($LASTEXITCODE -ne 0) { throw 'Full gate failed' }
